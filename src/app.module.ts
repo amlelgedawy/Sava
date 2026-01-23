@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService  } from '@nestjs/config';
 import { HealthController } from './common/health.controller';
 import { AccelerometerModule } from './sensors/accelerometer/accelerometer.module';
 import { UserModule } from './users/users.module';
+import { EventsModule } from './events/events.module';
 
 
 @Module({
@@ -21,6 +22,7 @@ import { UserModule } from './users/users.module';
     }),
     AccelerometerModule,
     UserModule,
+    EventsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
