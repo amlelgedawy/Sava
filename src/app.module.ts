@@ -8,6 +8,7 @@ import { HealthController } from './common/health.controller';
 import { AccelerometerModule } from './sensors/accelerometer/accelerometer.module';
 import { UserModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
+import { AlertsModule } from './alerts/alerts.module';
 
 
 @Module({
@@ -23,6 +24,8 @@ import { EventsModule } from './events/events.module';
     AccelerometerModule,
     UserModule,
     EventsModule,
+    AlertsModule,
+    
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

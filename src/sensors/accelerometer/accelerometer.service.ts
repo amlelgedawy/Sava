@@ -12,7 +12,7 @@ export class AccelerometerService {
     private readonly eventsService: EventsService,
   ) {}
 
-  async ingest(data: { patientId: string; x: number; y: number; z: number }) {
+  async ingest(data: { patientId: string;  x: number; y: number; z: number }) {
     const magnitude = Math.sqrt(
       data.x * data.x + data.y * data.y + data.z * data.z,
     );
@@ -29,7 +29,7 @@ export class AccelerometerService {
     if (fallDetected) {
       await this.eventsService.createFallEvent({
         patientId: data.patientId,
-        confidance: Math.min(magnitude / 50, 1),
+        confidence: Math.min(magnitude / 50, 1),
       });
     }
 

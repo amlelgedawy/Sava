@@ -50,4 +50,8 @@ export class UserService {
   async getCargiverPatients(caregiverId: string) {
     return this.UserModel.findById(caregiverId).populate('assignedPatients');
   }
+
+   findById(id:string){
+      return this.UserModel.findById(id);
+    }
 }
