@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Accelerometer, AccelerometerDocument } from './accelerometer.schema';
 import { EventsService } from 'src/events/events.service';
+import { EventType } from 'src/events/fall-event.schema';
 
 @Injectable()
 export class AccelerometerService {
@@ -27,7 +28,8 @@ export class AccelerometerService {
     });
 
     if (fallDetected) {
-      await this.eventsService.createFallEvent({
+      await this.eventsService.handleEvent({
+        type: EventType.FALL,
         patientId: data.patientId,
         confidence: Math.min(magnitude / 50, 1),
       });

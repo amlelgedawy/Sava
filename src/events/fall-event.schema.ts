@@ -1,26 +1,34 @@
-import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
 
-export type FallEventDocument = FallEvent & Document;
+export enum EventType {
+  FALL = 'FALL',
+  FACE = 'FACE',
+  OBJECT = 'OBJECT',
+}
 
 @Schema({ timestamps: false })
-export class FallEvent {
-    @Prop({ required: true })
-    patientId: string;
+export class Event extends Document {
+  @Prop({ required: true })
+  patientId: string;
 
-    @Prop({ default: 'FALL_DETECTED' })
-    eventType: string;
+  @Prop({ required: true, enum: EventType })
+  type: EventType;
 
-    @Prop({ default: 'ACCELEROMETER' })
-    source: string;
+  @Prop()
+  confidence?: number;
 
-    @Prop({ required: true, min:0, max:1 })
-    confidence: number;
+  @Prop({ type: Object })
+  payload?: any;
 
-    @Prop({ default: 'HIGH' })
-    severity: string;
+  // @Prop({ required: true, min:0, max:1 })
+  // confidence: number;
 
-    @Prop({ default: Date.now })
-    timestamp: Date
+  // @Prop({ default: 'HIGH' })
+  // severity: string;
+
+  // @Prop({ default: Date.now })
+  // timestamp: Date
 }
-export const FallEventSchema = SchemaFactory.createForClass(FallEvent);
+export const EventSchema = SchemaFactory.createForClass(Event);
+export type EventDocument = Event & Document;
