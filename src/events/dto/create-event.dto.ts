@@ -1,6 +1,6 @@
 import { EventType } from '../fall-event.schema';
 import { IsEnum, IsOptional, IsString, IsNumber, IsObject } from 'class-validator';
-
+import type { EventPayload } from '../event-payload';
 
 export class CreateEventDto {
   
@@ -10,8 +10,9 @@ export class CreateEventDto {
   type: EventType;
   @IsOptional()
   @IsNumber()
-  confidence?: number;
+  confidence?: number; // 0 to 1
   @IsOptional()
   @IsObject()
-  payload?: any;
+  payload?: EventPayload;
+
 }

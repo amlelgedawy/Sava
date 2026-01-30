@@ -16,8 +16,4 @@ async ingestEvent(@Body() dto: CreateEventDto){
     return this.eventService.getPatientEvents(patientId);
   }
 
-  @Post()
-  async createEvent(@Body()dto: CreateEventDto){
-    return this.eventService.handleEvent(dto);
-  }
 }
