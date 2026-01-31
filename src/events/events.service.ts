@@ -75,7 +75,7 @@ export class EventsService {
         await this.alertsService.createGenericAlert({
           patientId: event.patientId,
           caregiverId: caregiver.toString(),
-          type: 'unkown_face',
+          type: 'unknown_face',
           payload: event.payload,
           cooldown: 120_000, // 2 minutes
         });
@@ -97,7 +97,7 @@ export class EventsService {
     const severity =
       object === 'knife'
         ? 'CRITICAL'
-        : object === ' scissors'
+        : object === 'scissors'
           ? 'MEDIUM'
           : 'HIGH';
 

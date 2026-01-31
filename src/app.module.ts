@@ -3,20 +3,20 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { mongoConfig } from './config/database.config';
-import { ConfigModule, ConfigService  } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HealthController } from './common/health.controller';
 import { AccelerometerModule } from './sensors/accelerometer/accelerometer.module';
 import { UserModule } from './users/users.module';
 import { EventsModule } from './events/events.module';
 import { AlertsModule } from './alerts/alerts.module';
-
+import { CameraModule } from './sensors/camera/camera.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     MongooseModule.forRootAsync({
-      imports:[ConfigModule],
-      useFactory: (configService: ConfigService ) =>({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
         uri: configService.get<string>('MONGO_URI'),
       }),
       inject: [ConfigService],
@@ -25,7 +25,7 @@ import { AlertsModule } from './alerts/alerts.module';
     UserModule,
     EventsModule,
     AlertsModule,
-    
+    CameraModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],
