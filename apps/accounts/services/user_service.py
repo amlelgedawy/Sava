@@ -3,6 +3,7 @@ from typing import Optional, List
 
 from bson import ObjectId
 from mongoengine.errors import NotUniqueError, ValidationError, DoesNotExist
+from pymongo.errors import ServerSelectionTimeoutError, OperationFailure
 
 from apps.monitoring.models import User, PatientCaregiverLink
 
@@ -50,6 +51,8 @@ class UserService:
             raise ConflictError("A user with this email already exists.")
         except ValidationError as e:
             raise BadRequestError(f"Invalid user data: {str(e)}")
+        except (ServerSelectionTimeoutError, OperationFailure) as e:
+            raise BadRequestError(f"Database error: {str(e)}")
 
     @staticmethod
     def get_user_by_id(user_id: str) -> User:

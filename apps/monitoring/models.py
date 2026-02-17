@@ -20,7 +20,7 @@ class User(Document):
     
     meta = {"collection": "users"}
     
-    
+        
 ## P->C M TO M
 
 class PatientCaregiverLink(Document):
