@@ -3,6 +3,7 @@ from mongoengine import (Document, EmbeddedDocument,
     StringField, EmailField, DateTimeField, BooleanField,
     ReferenceField, ListField, DictField, FloatField)
 
+from django.contrib.auth.hashers import make_password, check_password
 
 ## USERS
 
@@ -14,6 +15,9 @@ class User(Document):
     name = StringField(required = True)
     email = EmailField(required = True, unique = True)
     role = StringField(required = True, choices = ROLE_CHOICES)
+    
+    password_hash = StringField(required=True)
+
     
     created_at = DateTimeField(default= datetime.now)
     updated_at = DateTimeField(default=  datetime.now)
@@ -56,6 +60,17 @@ class Event(Document):
     meta = {"collection":"events",
             "indexes": ["patient", "event_type", "-created_at"],
             }
+    
+    def set_password(self, raw_password: str):
+        if not raw_password:
+            raise ValueError("Password cannot be empty")
+        self.password_hash = make_password(raw_password)
+        self.updated_at = datetime.now()
+
+    def check_password(self, raw_password: str) -> bool:
+        if not self.password_hash:
+            return False
+        return check_password(raw_password, self.password_hash)
     
 
 ##ALERTS
