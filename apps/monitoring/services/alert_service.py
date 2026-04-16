@@ -16,20 +16,32 @@ class AlertService:
 
     @staticmethod
     def should_alert_for_event(event: Event) -> bool:
-        # Current rule: unknown face only
-        if event.event_type != Event.TYPE_FACE:
+        # Check for different event types that can trigger alerts
+        if event.event_type == Event.TYPE_FACE:
+            # Legacy face events - check if unknown person
+            known = bool(event.payload.get("known", True))
+            if known:
+                return False
+            if event.confidence < settings.FACE_UNKNOWN_THRESHOLD:
+                return False
+            alert_type = "UNKNOWN_FACE"
+            
+        elif event.event_type == Event.TYPE_PERSON_ENTER:
+            # Person enter events - check if unknown person
+            status = event.payload.get("status", "")
+            if status in ["IDENTIFIED", "PROCESSING"]:
+                return False  # Don't alert for known persons
+            alert_type = "UNKNOWN_PERSON_ENTER"
+            
+        else:
+            # Other event types don't trigger alerts
             return False
 
-        known = bool(event.payload.get("known", True))
-        if known:
+        # Check cooldown
+        if not AlertService._cooldown_passed(event.patient, alert_type):
             return False
 
-        if event.confidence < settings.FACE_UNKNOWN_THRESHOLD:
-            return False
-
-        if not AlertService._cooldown_passed(event.patient, event.event_type):
-            return False
-
+        # Check if patient has caregivers
         caregivers = UserService.get_caregivers_for_patient(str(event.patient.id))
         if not caregivers:
             return False
@@ -40,6 +52,17 @@ class AlertService:
     def create_alerts_for_event(event: Event) -> list[Alert]:
         caregivers = UserService.get_caregivers_for_patient(str(event.patient.id))
 
+        # Determine alert type and message
+        if event.event_type == Event.TYPE_FACE:
+            alert_type = "UNKNOWN_FACE"
+            message = "Unknown person detected by face recognition."
+        elif event.event_type == Event.TYPE_PERSON_ENTER:
+            alert_type = "UNKNOWN_PERSON_ENTER"
+            message = "Unknown person entered the monitored area."
+        else:
+            alert_type = event.event_type
+            message = f"Event: {event.event_type}"
+
         alerts = []
         for cg in caregivers:
             alerts.append(
@@ -47,8 +70,8 @@ class AlertService:
                     patient=event.patient,
                     caregiver=cg,
                     event=event,
-                    alert_type=event.event_type,
-                    message="Unknown person detected.",
+                    alert_type=alert_type,
+                    message=message,
                     status=Alert.STATUS_NEW,
                     created_at=datetime.utcnow(),
                 ).save()

@@ -26,14 +26,14 @@ MODELS_DIR = os.path.join(BASE_DIR, "models")
 os.makedirs(RELATIVES_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
-# Fallback matching tolerance (only used if model not trained yet)
-TOLERANCE = float(os.getenv("FACE_TOLERANCE", "0.5"))
+# Fallback matching tolerance (more lenient for distant faces)
+TOLERANCE = float(os.getenv("FACE_TOLERANCE", "0.6"))  # Increased from 0.5 to 0.6 for distant faces
 
-# Enrollment settings (tuned to be less strict by default)
+# Enrollment settings (tuned for monitoring cameras - smaller faces allowed)
 ENROLL_SAMPLE_EVERY_N_FRAMES = int(os.getenv("ENROLL_SAMPLE_EVERY_N_FRAMES", "2"))
-MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "80"))
-BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "30"))
-MIN_EMB_SEPARATION = float(os.getenv("MIN_EMB_SEPARATION", "0.05"))
+MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "40"))  # Reduced from 80 to 40 for distant faces
+BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "20"))  # Reduced from 30 to 20 for monitoring
+MIN_EMB_SEPARATION = float(os.getenv("MIN_EMB_SEPARATION", "0.03"))  # Reduced from 0.05 for more flexibility
 ENROLL_MAX_FACES = int(os.getenv("ENROLL_MAX_FACES", "80"))
 
 # Unknown decision thresholds (can tune later)
@@ -140,6 +140,52 @@ def _rotate_bgr(img_bgr: np.ndarray, k: int) -> np.ndarray:
     if k == 2:
         return cv2.rotate(img_bgr, cv2.ROTATE_180)
     return cv2.rotate(img_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+
+def _enhance_image_for_distant_faces(img_bgr: np.ndarray) -> np.ndarray:
+    """Enhance image to improve detection of distant/small faces."""
+    # Convert to LAB color space for better lighting adjustment
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    l = clahe.apply(l)
+    
+    # Merge channels back
+    enhanced_lab = cv2.merge([l, a, b])
+    enhanced_bgr = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+    
+    # Apply slight sharpening
+    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    enhanced_bgr = cv2.filter2D(enhanced_bgr, -1, kernel)
+    
+    return enhanced_bgr
+
+
+def _find_faces_with_enhancement(frame_bgr: np.ndarray):
+    """Try face detection with image enhancement for distant faces."""
+    # First try with original image
+    rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    locations = face_recognition.face_locations(rgb, model="hog")  # Use HOG for better performance on small faces
+    
+    if len(locations) > 0:
+        return frame_bgr, rgb, locations, 0
+    
+    # If no faces found, try with enhanced image
+    enhanced_bgr = _enhance_image_for_distant_faces(frame_bgr)
+    enhanced_rgb = cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB)
+    enhanced_locations = face_recognition.face_locations(enhanced_rgb, model="hog")
+    
+    if len(enhanced_locations) > 0:
+        return enhanced_bgr, enhanced_rgb, enhanced_locations, 0
+    
+    # Try with CNN model (more accurate but slower) as last resort
+    cnn_locations = face_recognition.face_locations(rgb, model="cnn")
+    if len(cnn_locations) > 0:
+        return frame_bgr, rgb, cnn_locations, 0
+    
+    return None, None, None, None
 
 
 def _find_single_face_with_rotation(frame_bgr: np.ndarray):
@@ -539,7 +585,8 @@ async def track_person(
         except Exception as e:
             return JSONResponse(status_code=400, content={"status": "error", "message": f"Failed to read image: {str(e)}"})
 
-        upright_bgr, rgb, locations, rot_k = _find_single_face_with_rotation(frame_bgr)
+        # Use enhanced face detection for distant faces
+        upright_bgr, rgb, locations, rot_k = _find_faces_with_enhancement(frame_bgr)
         if upright_bgr is None:
             return {
                 "status": "no_face",
