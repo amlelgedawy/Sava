@@ -4,6 +4,7 @@ from typing import Optional, List
 from bson import ObjectId
 from mongoengine.errors import NotUniqueError, ValidationError, DoesNotExist
 from pymongo.errors import ServerSelectionTimeoutError, OperationFailure
+from django.contrib.auth.hashers import make_password
 
 from apps.monitoring.models import User, PatientCaregiverLink
 
@@ -40,10 +41,15 @@ class UserService:
             raise BadRequestError("Role must be PATIENT or CAREGIVER.")
 
         try:
+            # Set a default password hash for testing
+            # default_password = "test123"
+            # password_hash = make_password(default_password)
+            
             return User(
                 name=name,
                 email=email,
                 role=role,
+                # password_hash=password_hash,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             ).save()

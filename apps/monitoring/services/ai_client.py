@@ -27,3 +27,30 @@ def analyze_face(image_file, patient_id: str) -> dict:
         return resp.json()
     except Exception as e:
         raise AIClientError(f"AI server request failed: {str(e)}")
+
+
+def track_person(image_file, patient_id: str) -> dict:
+    """
+    Sends multipart image to AI server for person tracking.
+    Returns face embedding and bounding box information.
+    Expected JSON shape:
+      {
+        "status": "success",
+        "face_detected": true,
+        "embedding": [0.1, 0.2, ...],
+        "bbox": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4}
+      }
+    """
+    url = settings.AI_SERVER_URL.rstrip("/") + "/track-person"
+
+    files = {
+        "frame": (getattr(image_file, "name", "frame.jpg"), image_file, getattr(image_file, "content_type", "image/jpeg"))
+    }
+    data = {"patient_id": patient_id}
+
+    try:
+        resp = requests.post(url, files=files, data=data, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise AIClientError(f"AI server tracking request failed: {str(e)}")

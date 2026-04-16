@@ -516,3 +516,81 @@ async def analyze_face(
                 os.remove(tmp_path)
         except Exception:
             pass
+
+
+@app.post("/track-person")
+async def track_person(
+    patient_id: str = Form(...),
+    frame: UploadFile = File(...),
+):
+    """
+    Person tracking endpoint that returns face embedding and bounding box.
+    Used for detecting new persons and tracking them across frames.
+    """
+    tmp_path = None
+    try:
+        suffix = os.path.splitext(frame.filename or "")[1] or ".jpg"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp_path = tmp.name
+            tmp.write(await frame.read())
+
+        try:
+            frame_bgr = _read_image_bgr(tmp_path)
+        except Exception as e:
+            return JSONResponse(status_code=400, content={"status": "error", "message": f"Failed to read image: {str(e)}"})
+
+        upright_bgr, rgb, locations, rot_k = _find_single_face_with_rotation(frame_bgr)
+        if upright_bgr is None:
+            return {
+                "status": "no_face",
+                "face_detected": False,
+                "embedding": None,
+                "bbox": None,
+                "rotation_k": rot_k,
+            }
+
+        unknown_encodings = face_recognition.face_encodings(rgb, known_face_locations=locations)
+        if not unknown_encodings:
+            return {
+                "status": "no_encoding",
+                "face_detected": True,
+                "embedding": None,
+                "bbox": None,
+                "rotation_k": rot_k,
+            }
+
+        emb = unknown_encodings[0]
+        top, right, bottom, left = locations[0]
+        
+        # Convert to normalized coordinates (0-1)
+        height, width = rgb.shape[:2]
+        bbox = {
+            "x": left / width,
+            "y": top / height,
+            "width": (right - left) / width,
+            "height": (bottom - top) / height,
+            "absolute": {
+                "left": int(left),
+                "top": int(top),
+                "right": int(right),
+                "bottom": int(bottom)
+            }
+        }
+
+        return {
+            "status": "success",
+            "face_detected": True,
+            "embedding": emb.tolist(),
+            "bbox": bbox,
+            "rotation_k": rot_k,
+        }
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
+
+    finally:
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception:
+            pass

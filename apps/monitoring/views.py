@@ -27,7 +27,7 @@ class FrameIngestView(APIView):
         patient_id = ser.validated_data["patient_id"]
         frame_file = ser.validated_data["frame"]
 
-        # 1) Validate patient exists
+        # 1) Validate pa    tient exists
         try:
             patient = UserService.get_user_by_id(patient_id)
         except Exception:

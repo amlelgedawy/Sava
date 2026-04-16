@@ -1,7 +1,7 @@
 from datetime import datetime
 from mongoengine import (Document, EmbeddedDocument,
     StringField, EmailField, DateTimeField, BooleanField,
-    ReferenceField, ListField, DictField, FloatField)
+    ReferenceField, ListField, DictField, FloatField, IntField)
 
 from django.contrib.auth.hashers import make_password, check_password
 
@@ -16,13 +16,24 @@ class User(Document):
     email = EmailField(required = True, unique = True)
     role = StringField(required = True, choices = ROLE_CHOICES)
     
-    password_hash = StringField(required=True)
+    # password_hash = StringField(required=True)
 
     
     created_at = DateTimeField(default= datetime.now)
     updated_at = DateTimeField(default=  datetime.now)
     
     meta = {"collection": "users"}
+    
+    # def set_password(self, raw_password: str):
+    #     if not raw_password:
+    #         raise ValueError("Password cannot be empty")
+    #     self.password_hash = make_password(raw_password)
+    #     self.updated_at = datetime.now()
+
+    # def check_password(self, raw_password: str) -> bool:
+    #     if not self.password_hash:
+    #         return False
+    #     return check_password(raw_password, self.password_hash)
     
         
 ## P->C M TO M
@@ -41,13 +52,54 @@ class PatientCaregiverLink(Document):
         ],
     }
     
+## PERSON TRACKING
+
+class PersonTracking(Document):
+    STATUS_NEW = "NEW"
+    STATUS_PROCESSING = "PROCESSING" 
+    STATUS_IDENTIFIED = "IDENTIFIED"
+    STATUS_UNKNOWN = "UNKNOWN"
+    STATUS_CHOICES = (STATUS_NEW, STATUS_PROCESSING, STATUS_IDENTIFIED, STATUS_UNKNOWN)
+    
+    patient = ReferenceField(User, required = True)
+    tracking_id = StringField(required = True, unique = True)
+    status = StringField(default = STATUS_NEW, choices = STATUS_CHOICES)
+    
+    # Face recognition results
+    person_name = StringField()  # Known person name if identified
+    confidence = FloatField(min_value=0.0, max_value=1.0)
+    
+    # Tracking data
+    first_seen = DateTimeField(default = datetime.now)
+    last_seen = DateTimeField(default = datetime.now)
+    frame_count = IntField(default = 1)
+    
+    # Face embedding for matching
+    face_embedding = ListField(FloatField())
+    
+    # Bounding box of last detection
+    last_bbox = DictField()
+    
+    meta = {
+        "collection": "person_tracking",
+        "indexes": [
+            "patient", 
+            "tracking_id", 
+            "status", 
+            "-first_seen",
+            "-last_seen"
+        ],
+    }
+
 ## EVENTS
 
 class Event(Document):
     TYPE_FACE = "FACE"
     TYPE_FALL = "FALL"
     TYPE_OBJECT = "OBJECT"
-    TYPE_CHOICES = (TYPE_FACE, TYPE_OBJECT, TYPE_FALL)
+    TYPE_PERSON_ENTER = "PERSON_ENTER"
+    TYPE_PERSON_EXIT = "PERSON_EXIT"
+    TYPE_CHOICES = (TYPE_FACE, TYPE_OBJECT, TYPE_FALL, TYPE_PERSON_ENTER, TYPE_PERSON_EXIT)
     
     patient = ReferenceField(User, required = True)
     event_type = StringField(required = True, choices = TYPE_CHOICES)
@@ -55,22 +107,16 @@ class Event(Document):
     confidence = FloatField(required = True, min_value=0.0, max_value=1.0)
     payload = DictField()
     
+    # Link to person tracking if applicable
+    person_tracking = ReferenceField(PersonTracking, required = False)
+    
     created_at = DateTimeField(default= datetime.now)
     
     meta = {"collection":"events",
-            "indexes": ["patient", "event_type", "-created_at"],
+            "indexes": ["patient", "event_type", "person_tracking", "-created_at"],
             }
     
-    def set_password(self, raw_password: str):
-        if not raw_password:
-            raise ValueError("Password cannot be empty")
-        self.password_hash = make_password(raw_password)
-        self.updated_at = datetime.now()
-
-    def check_password(self, raw_password: str) -> bool:
-        if not self.password_hash:
-            return False
-        return check_password(raw_password, self.password_hash)
+    
     
 
 ##ALERTS
