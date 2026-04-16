@@ -33,6 +33,16 @@ class AlertService:
                 return False  # Don't alert for known persons
             alert_type = "UNKNOWN_PERSON_ENTER"
             
+        elif event.event_type == Event.TYPE_OBJECT:
+            # Object events - check if dangerous object
+            object_class = event.payload.get("object_class", "")
+            is_dangerous = event.payload.get("is_dangerous", False)
+            
+            if not is_dangerous:
+                return False  # Only alert for dangerous objects
+            
+            alert_type = "DANGEROUS_OBJECT"
+            
         else:
             # Other event types don't trigger alerts
             return False
@@ -59,6 +69,10 @@ class AlertService:
         elif event.event_type == Event.TYPE_PERSON_ENTER:
             alert_type = "UNKNOWN_PERSON_ENTER"
             message = "Unknown person entered the monitored area."
+        elif event.event_type == Event.TYPE_OBJECT:
+            alert_type = "DANGEROUS_OBJECT"
+            object_class = event.payload.get("object_class", "unknown object")
+            message = f"Dangerous object detected: {object_class}. Patient may be at risk."
         else:
             alert_type = event.event_type
             message = f"Event: {event.event_type}"
