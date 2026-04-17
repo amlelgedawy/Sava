@@ -20,16 +20,20 @@ from .pose_estimator import PoseEstimator
 # SkateFormer paths & config
 # ----------------------------
 SKATEFORMER_DIR = r"D:\Year 4 UNI\Sava\SkateFormer"
-CHECKPOINT      = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_v2\best_v2.pt")
-CLASS_NAMES     = ["WALK", "EAT", "DRINK", "SLEEP", "FALL"]
+CHECKPOINT      = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_9class\best_9class.pt")
+CLASS_NAMES     = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE", "CHEST_PAIN"]
 
 # Overlay colours per label
 LABEL_COLORS = {
-    "WALK":  (0, 255, 0),    # green
-    "EAT":   (0, 200, 255),  # yellow
-    "DRINK": (0, 200, 255),  # yellow
-    "SLEEP": (200, 200, 0),  # cyan
-    "FALL":  (0, 0, 255),    # red  ← alert
+    "EAT":        (0, 200, 255),  # yellow
+    "DRINK":      (0, 200, 255),  # yellow
+    "SLEEP":      (200, 200, 0),  # cyan
+    "FALL":       (0, 0, 255),    # red — alert
+    "WALK":       (0, 255, 0),    # green
+    "SIT":        (255, 180, 0),  # orange
+    "STAND":      (255, 255, 0),  # light blue
+    "USE_PHONE":  (180, 0, 255),  # purple
+    "CHEST_PAIN": (0, 0, 255),    # red — alert
 }
 
 
@@ -38,7 +42,7 @@ LABEL_COLORS = {
 # ---------------------------------------------------------------------------
 
 def _load_model(device):
-    """Load fine-tuned 5-class SkateFormer. Returns model or None if checkpoint missing."""
+    """Load fine-tuned 9-class SkateFormer. Returns model or None if checkpoint missing."""
     if not CHECKPOINT.exists():
         print(f"⚠️  Checkpoint not found: {CHECKPOINT}")
         print("   Run train_finetune_v2.py first. Running without activity recognition.")
@@ -53,7 +57,7 @@ def _load_model(device):
         in_channels=3,
         depths=(2, 2, 2, 2),
         channels=(96, 192, 192, 192),
-        num_classes=len(CLASS_NAMES),   # 5
+        num_classes=len(CLASS_NAMES),   # 9
         embed_dim=96,
         num_people=2,
         num_frames=64,
@@ -75,7 +79,7 @@ def _load_model(device):
     ckpt = torch.load(str(CHECKPOINT), map_location=device)
     model.load_state_dict(ckpt["model"], strict=True)
     model.eval()
-    print(f"✅ Loaded 5-class SkateFormer from {CHECKPOINT}")
+    print(f"✅ Loaded 9-class SkateFormer from {CHECKPOINT}")
     return model
 
 
@@ -83,10 +87,10 @@ def _load_model(device):
 def _predict(model, device, skateformer_input):
     """
     skateformer_input: ndarray (3, 64, 24, 2)
-    Returns softmax probability vector (5,) as ndarray.
+    Returns softmax probability vector (9,) as ndarray.
     """
     x       = torch.from_numpy(skateformer_input).float().unsqueeze(0).to(device)
-    index_t = torch.linspace(-1, 1, 64).unsqueeze(0).to(device)
+    index_t = torch.arange(64, dtype=torch.long).unsqueeze(0).to(device)
     logits  = model(x, index_t)
     probs   = torch.softmax(logits, dim=1)[0].cpu().numpy()
     return probs
@@ -235,7 +239,9 @@ def run_camera():
     # Temporal smoothing: average softmax probs over last 15 frames
     # to eliminate single-frame spikes (random FALL, etc.)
     SMOOTH_WINDOW     = 15
-    CONFIDENCE_THRESH = 0.55   # below this → show "Uncertain"
+    CONFIDENCE_THRESH = 0.60   # below this → show "Uncertain"
+    # FALL requires higher confidence — false alarms are worse than missed detections
+    CLASS_THRESHOLDS  = {"FALL": 0.75, "CHEST_PAIN": 0.75}
     probs_buffer      = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
@@ -262,8 +268,10 @@ def run_camera():
                 avg_probs = np.mean(probs_buffer, axis=0)
                 best_id   = int(np.argmax(avg_probs))
                 best_conf = float(avg_probs[best_id])
-                if best_conf >= CONFIDENCE_THRESH:
-                    last_pred = CLASS_NAMES[best_id]
+                pred_name = CLASS_NAMES[best_id]
+                threshold = CLASS_THRESHOLDS.get(pred_name, CONFIDENCE_THRESH)
+                if best_conf >= threshold:
+                    last_pred = pred_name
                     last_conf = best_conf
                 else:
                     last_pred = None   # show "Uncertain"

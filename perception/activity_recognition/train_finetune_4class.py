@@ -18,13 +18,13 @@ from model.SkateFormer import SkateFormer
 # ----------------------------
 KEYPOINTS_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints")
 PRETRAINED = Path(r"D:\Year 4 UNI\Sava\SkateFormer\skateformer_pretrained_weights\ntu60_CSub\SkateFormer_j.pt")
-WORK_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_4class")
+WORK_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_9class")
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------
 # Classes (your mapping)
 # ----------------------------
-CLASS_NAMES = ["EAT", "DRINK", "NAP", "SLEEP"]
+CLASS_NAMES = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE", "CHEST_PAIN"]
 CLASS_TO_ID = {c: i for i, c in enumerate(CLASS_NAMES)}
 
 # ----------------------------
@@ -38,8 +38,8 @@ WEIGHT_DECAY = 1e-2
 NUM_WORKERS = 2
 VAL_RATIO = 0.2
 
-# For speed, you can cap per class (optional). Set to None to use all.
-MAX_SAMPLES_PER_CLASS = None  # e.g. 400
+# Cap per class to prevent EAT (1383 files) from dominating. Set to None to use all.
+MAX_SAMPLES_PER_CLASS = 500
 
 # ----------------------------
 # Utils
@@ -123,7 +123,7 @@ def build_model(device):
         depths=(2, 2, 2, 2),
         channels=(96, 192, 192, 192),
 
-        num_classes=len(CLASS_NAMES),   # ✅ 4 classes now
+        num_classes=len(CLASS_NAMES),   # ✅ 9 classes
         embed_dim=96,
         num_people=2,
         num_frames=64,
@@ -211,7 +211,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
     best_acc = 0.0
-    best_path = WORK_DIR / "best_4class.pt"
+    best_path = WORK_DIR / "best_9class.pt"
 
     for epoch in range(1, EPOCHS + 1):
         model.train()

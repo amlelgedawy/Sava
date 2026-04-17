@@ -3,18 +3,18 @@ extract_keypoints_adl.py
 ------------------------
 Extracts SkateFormer-ready skeleton windows from ADL dataset .mp4 files.
 
-ADL videos are short (12-20 frames). We loop each video until we reach
-64 frames to fill one window, then save a single window per video.
+ADL videos are 17-35 seconds long (440-900 frames @ 25fps) — fully compatible
+with 64-frame sliding windows. No looping used.
 
 Pipeline:
     .mp4 (RGB) → MediaPipe Pose (33 joints)
               → mediapipe_to_ntu() (25 joints)
               → normalize_skeleton() (scale+position invariant)
               → NEW_IDX_24 reorder (24 joints)
-              → loop-fill to 64 frames
+              → sliding 64-frame windows (stride=32)
               → .npy shape (3, 64, 24, 2)
 
-Output: data/keypoints_v2/{CLASS}/adl_{participant}_{action}_{session}.npy
+Output: data/keypoints/{CLASS}/adl_{participant}_{action}_{session}_w{i:02d}.npy
 """
 
 import os
@@ -29,7 +29,7 @@ from tqdm import tqdm
 # Paths
 # ---------------------------------------------------------------------------
 ADL_ROOT  = Path(r"D:\Year 4 UNI\ADL dataset\data")
-SAVE_ROOT = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints_v2")
+SAVE_ROOT = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints")
 SCRIPT_DIR = Path(__file__).parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -45,6 +45,9 @@ CLASS_MAP = {
     "Drink.Frombottle": "DRINK",
     "Nap":              "SLEEP",
     "Lay.Onbed":        "SLEEP",
+    "Getup":            "STAND",
+    "Use.Phone":        "USE_PHONE",
+    "Use.Tablet":       "USE_PHONE",
 }
 
 # ---------------------------------------------------------------------------
@@ -60,9 +63,8 @@ NEW_IDX_24 = np.array([
 ], dtype=np.int64)
 
 WINDOW_SIZE    = 64
-STRIDE         = 16   # sliding window stride over loop-filled sequence
-LOOP_FRAMES    = 128  # loop-fill target; gives 4 windows per video at stride=16
-MIN_POSE_RATIO = 0.5  # skip window if >50% frames have no pose
+STRIDE         = 32   # consistent with NTU extraction
+MIN_POSE_RATIO = 0.25 # skip window if >75% frames have no pose
 
 # ---------------------------------------------------------------------------
 # MediaPipe setup
@@ -111,22 +113,6 @@ def extract_frames_mediapipe(video_path):
     cap.release()
     return frames_ntu24, pose_mask
 
-
-def loop_to_length(frames, pose_mask, target):
-    """
-    Loop frames/mask until we reach at least `target` frames, then truncate.
-    """
-    if len(frames) == 0:
-        return None, None
-
-    looped_frames = []
-    looped_mask   = []
-
-    while len(looped_frames) < target:
-        looped_frames.extend(frames)
-        looped_mask.extend(pose_mask)
-
-    return looped_frames[:target], looped_mask[:target]
 
 
 def make_windows_from_sequence(frames, pose_mask):
@@ -180,16 +166,11 @@ def main():
             for video_path in tqdm(videos, desc=f"{participant.name}/{adl_class}", leave=False):
                 frames, mask = extract_frames_mediapipe(video_path)
 
-                if len(frames) == 0:
+                if len(frames) < WINDOW_SIZE:
                     skipped += 1
-                    continue
+                    continue  # video too short — skip, never loop
 
-                looped_frames, looped_mask = loop_to_length(frames, mask, LOOP_FRAMES)
-                if looped_frames is None:
-                    skipped += 1
-                    continue
-
-                windows = make_windows_from_sequence(looped_frames, looped_mask)
+                windows = make_windows_from_sequence(frames, mask)
 
                 if len(windows) == 0:
                     skipped += 1

@@ -27,7 +27,7 @@ from tqdm import tqdm
 # Paths — run this script from the project root: python perception/activity_recognition/extract_keypoints_ntu.py
 # ---------------------------------------------------------------------------
 NTU_ROOT   = Path(r"D:\Year 4 UNI\Grad Project\Activity Recognition ROSElab\nturgbd_COMBINED")
-SAVE_ROOT  = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints_v2")
+SAVE_ROOT  = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints")
 SCRIPT_DIR = Path(__file__).parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -37,16 +37,29 @@ from data_preprocessing.convert_to_ntu import mediapipe_to_ntu, normalize_skelet
 # Action ID → Class label mapping (only IDs we care about)
 # ---------------------------------------------------------------------------
 ACTION_MAP = {
-    "A001": "DRINK",   # drink water
-    "A002": "EAT",     # eat meal
-    "A042": "FALL",    # staggering (NTU60)
-    "A043": "FALL",    # falling down (NTU60)
-    "A046": "WALK",    # walking towards each other (NTU60, 2-person interaction)
-    "A047": "WALK",    # walking apart from each other (NTU60, 2-person interaction)
-    "A050": "WALK",    # walking towards each other (NTU60)
-    "A051": "WALK",    # walking apart from each other (NTU60)
-    "A062": "FALL",    # staggering (NTU120, different subjects/cameras)
-    "A063": "FALL",    # falling down (NTU120, different subjects/cameras)
+    "A001": "DRINK",      # drink water
+    "A002": "EAT",        # eat meal
+    # FALL
+    "A042": "FALL",       # staggering (NTU60)
+    "A043": "FALL",       # falling down (NTU60)
+    "A062": "FALL",       # staggering (NTU120)
+    "A063": "FALL",       # falling down (NTU120)
+    # WALK — A050/A051 removed (pushing/pat-on-back, wrong class)
+    "A046": "WALK",       # walking towards each other (NTU60)
+    "A047": "WALK",       # walking apart from each other (NTU60)
+    "A057": "WALK",       # walking towards each other (NTU120)
+    "A058": "WALK",       # walking apart from each other (NTU120)
+    # SIT (sit-down transitions only)
+    "A008": "SIT",        # sit down (NTU60)
+    "A059": "SIT",        # sit down (NTU120)
+    # STAND (stand-up transitions)
+    "A009": "STAND",      # stand up (NTU60)
+    "A060": "STAND",      # stand up (NTU120)
+    # USE_PHONE
+    "A028": "USE_PHONE",  # make a phone call (NTU60)
+    "A029": "USE_PHONE",  # playing with phone/tablet (NTU60)
+    # CHEST_PAIN
+    "A045": "CHEST_PAIN", # chest pain / touch chest (NTU60)
 }
 
 # ---------------------------------------------------------------------------
