@@ -2,7 +2,7 @@
 
 A comprehensive AI-powered patient monitoring system with face recognition, person tracking, and dangerous object detection capabilities.
 
-## 🚀 Features
+##  Features
 
 ### **Person Tracking AI**
 - **Face Detection**: Detects faces in real-time video frames
@@ -70,7 +70,7 @@ BLUR_THRESHOLD=20
 MIN_EMB_SEPARATION=0.03
 ```
 
-## 🚀 Running the System
+## Running the System
 
 ### **1. Start MongoDB**
 ```bash
@@ -304,7 +304,7 @@ patient_id: "69ddbdac102ad38f9d396857"
 frame: [your_test_image.jpg]
 ```
 
-## 📊 Database Collections
+##  Database Collections
 
 ### **MongoDB Collections**
 - **users**: Patients and caregivers
@@ -338,7 +338,7 @@ frame: [your_test_image.jpg]
 - `ALERT_COOLDOWN_SECONDS`: 60 (cooldown between same alert type)
 - `FACE_UNKNOWN_THRESHOLD`: 0.80 (confidence threshold for unknown faces)
 
-## 🚨 Dangerous Object Categories
+##  Dangerous Object Categories
 
 ### **Critical Severity**
 - Weapons: gun, pistol, rifle
@@ -385,7 +385,7 @@ frame: [your_test_image.jpg]
    - Notify all linked caregivers
    - Apply cooldown protection
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### **Common Issues**
 
@@ -416,7 +416,7 @@ curl http://localhost:8001/health
 curl -X POST -F "patient_id=PATIENT_ID" -F "frame=@image.jpg" http://localhost:8000/api/person-tracking/track
 ```
 
-## 📝 Development Notes
+##  Development Notes
 
 ### **System Architecture**
 - **Django Backend**: Main application server (port 8000)
@@ -432,7 +432,7 @@ curl -X POST -F "patient_id=PATIENT_ID" -F "frame=@image.jpg" http://localhost:8
 - **Scalable Architecture**: Ready for multiple cameras
 - **External Integration**: Open API for third-party AI
 
-## 📞 Support
+##  Support
 
 For issues or questions:
 1. Check health endpoints
@@ -442,4 +442,4 @@ For issues or questions:
 
 ---
 
-**SAVA Smart Patient Monitoring System** - Keeping patients safe with AI-powered monitoring 🤖❤️
+**SAVA Smart Patient Monitoring System** - Keeping patients safe with AI-powered monitoring 
