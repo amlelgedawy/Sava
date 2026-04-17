@@ -31,7 +31,7 @@ A comprehensive AI-powered patient monitoring system with face recognition, pers
 - **Caregiver Notification**: Alerts sent to all linked caregivers
 - **Event Tracking**: Complete audit trail
 
-## 🛠️ Setup & Installation
+##  Setup & Installation
 
 ### **Prerequisites**
 ```bash
