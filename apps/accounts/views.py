@@ -6,6 +6,7 @@ from apps.accounts.serializers import (
     UserCreateSerializer,
     UserUpdateSerializer,
     UserResponseSerializer,
+    LoginSerializer,
 )
 from apps.accounts.services.user_service import (
     UserService,
@@ -130,5 +131,21 @@ class CaregiverPatientsView(APIView):
         try:
             patients = UserService.get_patients_for_caregiver(caregiver_id)
             return Response([_serialize_user(u) for u in patients], status=status.HTTP_200_OK)
+        except Exception as e:
+            return _handle_service_error(e)
+
+
+class LoginView(APIView):
+    """
+    POST /api/login
+    Body: {"email": "...", "password": "..."}
+    Returns user data if credentials are valid (caregiver only).
+    """
+    def post(self, request):
+        ser = LoginSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            user = UserService.authenticate(**ser.validated_data)
+            return Response(_serialize_user(user), status=status.HTTP_200_OK)
         except Exception as e:
             return _handle_service_error(e)

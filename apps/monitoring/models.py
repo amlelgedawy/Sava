@@ -16,24 +16,23 @@ class User(Document):
     email = EmailField(required = True, unique = True)
     role = StringField(required = True, choices = ROLE_CHOICES)
     
-    # password_hash = StringField(required=True)
-
+    password_hash = StringField()
     
     created_at = DateTimeField(default= datetime.now)
     updated_at = DateTimeField(default=  datetime.now)
     
     meta = {"collection": "users"}
     
-    # def set_password(self, raw_password: str):
-    #     if not raw_password:
-    #         raise ValueError("Password cannot be empty")
-    #     self.password_hash = make_password(raw_password)
-    #     self.updated_at = datetime.now()
+    def set_password(self, raw_password: str):
+        if not raw_password:
+            raise ValueError("Password cannot be empty")
+        self.password_hash = make_password(raw_password)
+        self.updated_at = datetime.now()
 
-    # def check_password(self, raw_password: str) -> bool:
-    #     if not self.password_hash:
-    #         return False
-    #     return check_password(raw_password, self.password_hash)
+    def check_password(self, raw_password: str) -> bool:
+        if not self.password_hash:
+            return False
+        return check_password(raw_password, self.password_hash)
     
         
 ## P->C M TO M

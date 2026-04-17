@@ -28,7 +28,7 @@ class ConflictError(UserServiceError):
 class UserService:
     # Users
     @staticmethod
-    def create_user(name: str, email: str, role: str) -> User:
+    def create_user(name: str, email: str, role: str, password: str = None) -> User:
         name = (name or "").strip()
         email = (email or "").strip().lower()
         role = (role or "").strip().upper()
@@ -39,20 +39,20 @@ class UserService:
             raise BadRequestError("Email is required.")
         if role not in (User.ROLE_PATIENT, User.ROLE_CAREGIVER):
             raise BadRequestError("Role must be PATIENT or CAREGIVER.")
+        if role == User.ROLE_CAREGIVER and not password:
+            raise BadRequestError("Password is required for caregivers.")
 
         try:
-            # Set a default password hash for testing
-            # default_password = "test123"
-            # password_hash = make_password(default_password)
-            
-            return User(
+            user = User(
                 name=name,
                 email=email,
                 role=role,
-                # password_hash=password_hash,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
-            ).save()
+            )
+            if password:
+                user.set_password(password)
+            return user.save()
         except NotUniqueError:
             raise ConflictError("A user with this email already exists.")
         except ValidationError as e:
@@ -89,7 +89,7 @@ class UserService:
         return list(User.objects.order_by("-created_at"))
 
     @staticmethod
-    def update_user(user_id: str, name: Optional[str] = None) -> User:
+    def update_user(user_id: str, name: Optional[str] = None, password: Optional[str] = None) -> User:
         user = UserService.get_user_by_id(user_id)
 
         if name is not None:
@@ -98,8 +98,26 @@ class UserService:
                 raise BadRequestError("Name cannot be empty.")
             user.name = name
 
+        if password is not None:
+            if user.role != User.ROLE_CAREGIVER:
+                raise BadRequestError("Only caregivers can have passwords.")
+            user.set_password(password)
+
         user.updated_at = datetime.utcnow()
         user.save()
+        return user
+
+    @staticmethod
+    def authenticate(email: str, password: str) -> User:
+        email = (email or "").strip().lower()
+        if not email or not password:
+            raise BadRequestError("Email and password are required.")
+
+        user = User.objects(email=email).first()
+        if not user:
+            raise NotFoundError("Invalid email or password.")
+        if not user.check_password(password):
+            raise BadRequestError("Invalid email or password.")
         return user
 
     # Patient <-> Caregiver Links

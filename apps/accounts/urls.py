@@ -5,9 +5,11 @@ from apps.accounts.views import (
     LinkCaregiverToPatientView,
     PatientCaregiversView,
     CaregiverPatientsView,
+    LoginView,
 )
 
 urlpatterns = [
+    path("login", LoginView.as_view(), name="login"),
     path("users", UsersListCreateView.as_view(), name="users_list_create"),
     path("users/<str:user_id>", UserDetailView.as_view(), name="user_detail"),
 
