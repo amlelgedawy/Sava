@@ -27,13 +27,13 @@ os.makedirs(RELATIVES_DIR, exist_ok=True)
 os.makedirs(MODELS_DIR, exist_ok=True)
 
 # Fallback matching tolerance (more lenient for distant faces)
-TOLERANCE = float(os.getenv("FACE_TOLERANCE", "0.6"))  # Increased from 0.5 to 0.6 for distant faces
+TOLERANCE = float(os.getenv("FACE_TOLERANCE", "0.6")) 
 
 # Enrollment settings (tuned for monitoring cameras - smaller faces allowed)
 ENROLL_SAMPLE_EVERY_N_FRAMES = int(os.getenv("ENROLL_SAMPLE_EVERY_N_FRAMES", "2"))
-MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "40"))  # Reduced from 80 to 40 for distant faces
-BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "20"))  # Reduced from 30 to 20 for monitoring
-MIN_EMB_SEPARATION = float(os.getenv("MIN_EMB_SEPARATION", "0.03"))  # Reduced from 0.05 for more flexibility
+MIN_FACE_SIZE_PX = int(os.getenv("MIN_FACE_SIZE_PX", "40"))  
+BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "20"))  
+MIN_EMB_SEPARATION = float(os.getenv("MIN_EMB_SEPARATION", "0.03"))  
 ENROLL_MAX_FACES = int(os.getenv("ENROLL_MAX_FACES", "80"))
 
 # Unknown decision thresholds (can tune later)
@@ -263,7 +263,7 @@ def train_face_svm_internal():
 
 
 # ---------------------------
-# Fallback flat encodings (optional)
+# Fallback flat encodings
 # ---------------------------
 
 def load_known_encodings_flat() -> Tuple[List, List[str]]:
