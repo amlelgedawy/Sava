@@ -1,13 +1,14 @@
 import sys
 import torch
+import os
 
 # Add SkateFormer repo to Python path
-SKATEFORMER_DIR = r"D:\Year 4 UNI\Sava\SkateFormer"
+SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "SkateFormer")
 sys.path.append(SKATEFORMER_DIR)
 
 from model.SkateFormer import SkateFormer
 
-WEIGHTS = r"D:\Year 4 UNI\Sava\SkateFormer\skateformer_pretrained_weights\ntu60_CSub\SkateFormer_j.pt"
+WEIGHTS = os.path.join(SKATEFORMER_DIR, "skateformer_pretrained_weights", "ntu60_CSub", "SkateFormer_j.pt")
 
 
 def load_pretrained(device):

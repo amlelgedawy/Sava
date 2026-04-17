@@ -13,13 +13,12 @@ from data_preprocessing.convert_to_ntu import mediapipe_to_ntu
 # ----------------------------
 # Paths
 # ----------------------------
-SKATEFORMER_DIR = r"D:\Year 4 UNI\Sava\SkateFormer"
+SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "SkateFormer")
 sys.path.append(SKATEFORMER_DIR)
 
 from model.SkateFormer import SkateFormer
 
-CHECKPOINT = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_4class\best_4class.pt")
-
+CHECKPOINT = Path(os.path.dirname(os.path.abspath(__file__))) / "work_dir" / "sava_4class" / "best_4class.pt"
 # ----------------------------
 # Labels
 # ----------------------------

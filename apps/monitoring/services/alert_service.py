@@ -42,7 +42,19 @@ class AlertService:
                 return False  # Only alert for dangerous objects
             
             alert_type = "DANGEROUS_OBJECT"
-            
+
+        elif event.event_type == Event.TYPE_FALL:
+            # Fall events - always alert
+            alert_type = "FALL_DETECTED"
+
+        elif event.event_type == Event.TYPE_ACTIVITY:
+            # Activity events - only alert for dangerous activities
+            activity = event.payload.get("activity", "")
+            if activity not in ["CHEST_PAIN"]:
+                return False  # Only alert for dangerous activities
+            alert_type = f"{activity}_DETECTED"
+
+ 
         else:
             # Other event types don't trigger alerts
             return False
@@ -73,6 +85,15 @@ class AlertService:
             alert_type = "DANGEROUS_OBJECT"
             object_class = event.payload.get("object_class", "unknown object")
             message = f"Dangerous object detected: {object_class}. Patient may be at risk."
+        elif event.event_type == Event.TYPE_FALL:
+            alert_type = "FALL_DETECTED"
+            confidence = event.payload.get("confidence", 0.0)
+            message = f"URGENT: Patient fall detected with {confidence*100:.0f}% confidence. Immediate attention required."
+        elif event.event_type == Event.TYPE_ACTIVITY:
+            activity = event.payload.get("activity", "unknown")
+            confidence = event.payload.get("confidence", 0.0)
+            alert_type = f"{activity}_DETECTED"
+            message = f"URGENT: Patient showing signs of {activity.replace('_', ' ').lower()} ({confidence*100:.0f}% confidence). Please check immediately."
         else:
             alert_type = event.event_type
             message = f"Event: {event.event_type}"

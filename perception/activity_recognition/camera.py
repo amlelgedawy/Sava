@@ -1,11 +1,13 @@
 import sys
 import time
+import threading
 from collections import deque
 from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
+import requests
 
 from .config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
@@ -18,9 +20,10 @@ from .pose_estimator import PoseEstimator
 
 # ----------------------------
 # SkateFormer paths & config
-# ----------------------------
-SKATEFORMER_DIR = r"D:\Year 4 UNI\Sava\SkateFormer"
-CHECKPOINT      = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_9class\best_9class.pt")
+# ----------------------x------
+import os
+SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "SkateFormer", "SkateFormer-main")
+CHECKPOINT      = Path(os.path.join(os.path.dirname(__file__), "work_dir", "sava_9class", "best_9class.pt"))
 CLASS_NAMES     = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE", "CHEST_PAIN"]
 
 # Overlay colours per label
@@ -44,14 +47,18 @@ LABEL_COLORS = {
 def _load_model(device):
     """Load fine-tuned 9-class SkateFormer. Returns model or None if checkpoint missing."""
     if not CHECKPOINT.exists():
-        print(f"⚠️  Checkpoint not found: {CHECKPOINT}")
+        print(f"  Checkpoint not found: {CHECKPOINT}")
         print("   Run train_finetune_v2.py first. Running without activity recognition.")
         return None
 
     if SKATEFORMER_DIR not in sys.path:
         sys.path.insert(0, SKATEFORMER_DIR)
 
-    from model.SkateFormer import SkateFormer
+    try:
+        from model.SkateFormer import SkateFormer
+    except ImportError:
+        print("  SkateFormer model not found. Running without activity recognition.")
+        return None
 
     model = SkateFormer(
         in_channels=3,
@@ -79,7 +86,7 @@ def _load_model(device):
     ckpt = torch.load(str(CHECKPOINT), map_location=device)
     model.load_state_dict(ckpt["model"], strict=True)
     model.eval()
-    print(f"✅ Loaded 9-class SkateFormer from {CHECKPOINT}")
+    print(f" Loaded 9-class SkateFormer from {CHECKPOINT}")
     return model
 
 
@@ -160,6 +167,168 @@ class WanderingDetector:
 
 
 # ---------------------------------------------------------------------------
+# Face Recognition + Person Tracking integration
+# ---------------------------------------------------------------------------
+
+DJANGO_API_URL = os.environ.get("DJANGO_API_URL", "http://localhost:8000/api")
+AI_FACE_SERVER_URL = os.environ.get("AI_FACE_SERVER_URL", "http://localhost:5000")
+
+# How often to run face recognition (seconds) — not every frame
+FACE_RECOGNITION_INTERVAL = 5
+
+# Cooldowns for activity alerts (seconds)
+_ALERT_COOLDOWNS = {
+    "FALL": 30,
+    "CHEST_PAIN": 30,
+    "WANDERING": 120,
+}
+_last_alert_time = {}
+
+
+class PatientIdentifier:
+    """
+    Uses the AI face server + Django patient lookup to identify the patient
+    in front of the camera. Runs in a background thread so the camera loop
+    never blocks on network I/O.
+    """
+
+    def __init__(self):
+        self.patient_id = None
+        self.patient_name = None
+        self._last_check = 0
+        self._busy = False  # True while a background check is running
+        self._name_to_id_cache = {}  # person_name -> patient_id
+
+    def identify(self, frame, yolo_boxes):
+        """
+        Non-blocking. Immediately returns the cached patient_id.
+        Kicks off a background thread every FACE_RECOGNITION_INTERVAL seconds
+        to refresh the identity via face recognition.
+        """
+        now = time.time()
+        if self._busy or (now - self._last_check < FACE_RECOGNITION_INTERVAL):
+            return self.patient_id
+        self._last_check = now
+
+        if yolo_boxes is None or len(yolo_boxes) == 0:
+            return self.patient_id
+
+        # Crop the best person detection for face recognition
+        best = yolo_boxes[yolo_boxes.conf.argmax()]
+        x1, y1, x2, y2 = [int(v) for v in best.xyxy[0].cpu().numpy()]
+        h, w = frame.shape[:2]
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        person_crop = frame[y1:y2, x1:x2]
+
+        if person_crop.size == 0:
+            return self.patient_id
+
+        # Encode JPEG on main thread (fast, ~1-2 ms) then send in background
+        _, buf = cv2.imencode(".jpg", person_crop)
+        jpeg_bytes = buf.tobytes()
+
+        self._busy = True
+        threading.Thread(target=self._do_identify, args=(jpeg_bytes,), daemon=True).start()
+
+        return self.patient_id
+
+    def _do_identify(self, jpeg_bytes):
+        """Background thread: call AI face server + Django lookup."""
+        try:
+            resp = requests.post(
+                f"{AI_FACE_SERVER_URL}/analyze-face",
+                files={"frame": ("face.jpg", jpeg_bytes, "image/jpeg")},
+                data={"patient_id": "camera_auto"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                return
+
+            result = resp.json()
+            payload = result.get("payload", {})
+            person_name = payload.get("person_name")
+            is_known = payload.get("known", False)
+
+            if not is_known or not person_name:
+                return
+
+            pid = self._resolve_patient_id(person_name)
+            if pid:
+                if pid != self.patient_id:
+                    print(f" Patient identified: {person_name} (id={pid})")
+                self.patient_id = pid
+                self.patient_name = person_name
+
+        except Exception:
+            pass
+        finally:
+            self._busy = False
+
+    def _resolve_patient_id(self, person_name):
+        """Look up person_name in Django to get the patient_id. Results are cached."""
+        if person_name in self._name_to_id_cache:
+            return self._name_to_id_cache[person_name]
+
+        try:
+            resp = requests.get(
+                f"{DJANGO_API_URL}/activity-recognition/patient-lookup",
+                params={"name": person_name},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("found"):
+                    pid = data["patient_id"]
+                    self._name_to_id_cache[person_name] = pid
+                    return pid
+        except Exception:
+            pass
+        return None
+
+
+def _send_activity_event(patient_id, activity, confidence, is_wandering=False, walk_duration=0.0):
+    """
+    POST activity event to Django API in a background thread.
+    Respects per-activity cooldowns to avoid flooding.
+    """
+    if not patient_id:
+        return  # No patient identified yet
+
+    now = time.time()
+    key = "WANDERING" if is_wandering else activity
+    cooldown = _ALERT_COOLDOWNS.get(key, 10)
+    if now - _last_alert_time.get(key, 0) < cooldown:
+        return  # Still in cooldown
+    _last_alert_time[key] = now
+
+    def _post():
+        try:
+            resp = requests.post(
+                f"{DJANGO_API_URL}/activity-recognition/event",
+                json={
+                    "patient_id": patient_id,
+                    "activity": activity,
+                    "confidence": float(confidence),
+                    "is_wandering": is_wandering,
+                    "walk_duration_seconds": float(walk_duration),
+                },
+                timeout=5,
+            )
+            if resp.status_code == 201:
+                data = resp.json()
+                alerts = data.get("alerts_created", 0)
+                if alerts > 0:
+                    print(f"\U0001f6a8 Alert sent: {activity} -> {alerts} caregiver(s) notified")
+            else:
+                print(f"\u26a0\ufe0f  Django API error: {resp.status_code}")
+        except Exception as e:
+            print(f"\u26a0\ufe0f  Could not reach Django API: {e}")
+
+    threading.Thread(target=_post, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
 # Camera helpers
 # ---------------------------------------------------------------------------
 
@@ -179,7 +348,7 @@ def _get_bbox_center(frame_before, frame_after):
 def _detect_and_get_center(frame, yolo_model):
     """
     Run YOLO, draw boxes, and return the centre of the first person box.
-    Returns (annotated_frame, (cx, cy) or None).
+    Returns (annotated_frame, (cx, cy) or None, boxes).
     """
     results = yolo_model(frame, classes=[0], verbose=False)
     annotated = results[0].plot()
@@ -192,13 +361,13 @@ def _detect_and_get_center(frame, yolo_model):
         x1, y1, x2, y2 = best.xyxy[0].cpu().numpy()
         center = (int((x1 + x2) / 2), int((y1 + y2) / 2))
 
-    return annotated, center
+    return annotated, center, boxes
 
 
 def initialize_camera():
     cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
     if not cap.isOpened():
-        raise Exception("❌ Error: Cannot open camera")
+        raise Exception(" Error: Cannot open camera")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     return cap
@@ -219,18 +388,21 @@ def run_camera():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    # Load YOLO directly so we can get bounding boxes for wandering tracker
+    # Load YOLO for person detection
     from ultralytics import YOLO
-    yolo = YOLO(r"D:\Year 4 UNI\Sava\yolov8n.pt")
+    yolo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "yolov8n.pt")
+    yolo = YOLO(yolo_path)
 
-    model     = _load_model(device)
-    pose_est  = PoseEstimator()
-    wandering = WanderingDetector()
+    model      = _load_model(device)
+    pose_est   = PoseEstimator()
+    wandering  = WanderingDetector()
+    identifier = PatientIdentifier()
 
     cap      = initialize_camera()
     recorder = initialize_recorder()
 
-    print("✅ Camera started successfully.")
+    print(" Camera started successfully.")
+    print(" Waiting for face recognition to identify patient...")
     print("Press 'q' to quit.")
 
     prev_time   = 0
@@ -247,18 +419,22 @@ def run_camera():
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("❌ Failed to grab frame.")
+            print(" Failed to grab frame.")
             break
 
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        raw_frame = frame.copy()  # Keep a clean copy for face recognition
 
-        # 1️⃣ Person Detection (YOLO) — get annotated frame + bbox centre
-        frame, bbox_center = _detect_and_get_center(frame, yolo)
+        # 1️ Person Detection (YOLO) — get annotated frame + bbox centre + boxes
+        frame, bbox_center, yolo_boxes = _detect_and_get_center(frame, yolo)
 
-        # 2️⃣ Pose Estimation (MediaPipe) — fills 64-frame sliding window
+        # 2️ Face Recognition — identify patient from detected person
+        patient_id = identifier.identify(raw_frame, yolo_boxes)
+
+        # 3️ Pose Estimation (MediaPipe) — fills 64-frame sliding window
         frame, _ = pose_est.extract(frame, draw=True)
 
-        # 3️⃣ Activity Recognition (SkateFormer)
+        # 4️ Activity Recognition (SkateFormer)
         if model is not None:
             sk_input = pose_est.get_skateformer_input()
             if sk_input is not None:
@@ -277,8 +453,17 @@ def run_camera():
                     last_pred = None   # show "Uncertain"
                     last_conf = best_conf
 
-        # 4️⃣ Wandering Detection (only meaningful when label is confident)
+        # 5️ Wandering Detection (only meaningful when label is confident)
         wandering.update(last_pred or "", bbox_center)
+
+        # 6️ Send events to Django API for alerting (only if patient identified)
+        if last_pred == "FALL":
+            _send_activity_event(patient_id, "FALL", last_conf)
+        elif last_pred == "CHEST_PAIN":
+            _send_activity_event(patient_id, "CHEST_PAIN", last_conf)
+        if wandering.is_wandering:
+            walk_secs = wandering._walk_frames / TARGET_FPS
+            _send_activity_event(patient_id, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
 
         # FPS control
         current_time = time.time()
@@ -296,10 +481,19 @@ def run_camera():
         cv2.putText(frame, f"FPS: {int(fps)}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
+        # Patient identity
+        if identifier.patient_name:
+            id_text = f"Patient: {identifier.patient_name}"
+            id_color = (0, 255, 0)
+        else:
+            id_text = "Patient: Identifying..."
+            id_color = (0, 200, 255)
+        cv2.putText(frame, id_text, (10, 65),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, id_color, 2)
+
         # Activity label
         if model is not None:
             if len(probs_buffer) < SMOOTH_WINDOW:
-                # Still filling the smoothing buffer
                 act_text  = f"Collecting frames... ({len(probs_buffer)}/{SMOOTH_WINDOW})"
                 act_color = (180, 180, 180)
             elif last_pred is not None:
@@ -308,17 +502,17 @@ def run_camera():
             else:
                 act_text  = f"Uncertain  ({last_conf * 100:.1f}%)"
                 act_color = (180, 180, 180)
-            cv2.putText(frame, act_text, (10, 65),
+            cv2.putText(frame, act_text, (10, 95),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, act_color, 2)
 
         # Wandering alert
         if wandering.is_wandering:
-            cv2.putText(frame, "⚠ WANDERING DETECTED", (10, 105),
+            cv2.putText(frame, " WANDERING DETECTED", (10, 135),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
         # Fall alert (model-based, immediate)
         if last_pred == "FALL":
-            cv2.putText(frame, "🚨 FALL DETECTED", (10, 145),
+            cv2.putText(frame, " FALL DETECTED", (10, 175),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
         cv2.imshow("SAVA - Alzheimer Monitoring", frame)
@@ -334,4 +528,4 @@ def run_camera():
     if recorder:
         recorder.release()
     cv2.destroyAllWindows()
-    print("🛑 Camera stopped cleanly.")
+    print(" Camera stopped cleanly.")
