@@ -184,26 +184,50 @@ _ALERT_COOLDOWNS = {
 }
 _last_alert_time = {}
 
+# Critical events that should be queued when patient_id is not yet available
+_CRITICAL_ACTIVITIES = {"FALL", "CHEST_PAIN"}
+_pending_events = []          # list of dicts queued while patient_id is None
+_PENDING_MAX = 20             # cap to avoid unbounded memory growth
+_pending_lock = threading.Lock()
+
 
 class PatientIdentifier:
     """
-    Uses the AI face server + Django patient lookup to identify the patient
-    in front of the camera. Runs in a background thread so the camera loop
-    never blocks on network I/O.
+    Two-phase patient identification:
+      Phase 1 (IDENTIFYING): Runs face recognition every FACE_RECOGNITION_INTERVAL
+               seconds until a known patient is matched.
+      Phase 2 (TRACKING):    Once identified, uses person tracking (embedding
+               similarity) to maintain identity without re-running face
+               recognition. Only falls back to Phase 1 if the tracked person
+               is lost for TRACKING_LOST_THRESHOLD consecutive checks.
+
+    All network I/O runs in a background thread so the camera loop never blocks.
     """
+
+    # States
+    STATE_IDENTIFYING = "IDENTIFYING"
+    STATE_TRACKING = "TRACKING"
+
+    # After this many consecutive tracking failures, fall back to face recognition
+    TRACKING_LOST_THRESHOLD = 3
+    # Embedding cosine-distance threshold — below this the person is "the same"
+    EMBEDDING_SIMILARITY_THRESHOLD = 0.6
 
     def __init__(self):
         self.patient_id = None
         self.patient_name = None
+        self.state = self.STATE_IDENTIFYING
         self._last_check = 0
-        self._busy = False  # True while a background check is running
-        self._name_to_id_cache = {}  # person_name -> patient_id
+        self._busy = False
+        self._name_to_id_cache = {}
+        # Tracking state
+        self._known_embedding = None      # 128-d face embedding of identified patient
+        self._tracking_lost_count = 0     # consecutive frames where tracking failed
 
     def identify(self, frame, yolo_boxes):
         """
-        Non-blocking. Immediately returns the cached patient_id.
-        Kicks off a background thread every FACE_RECOGNITION_INTERVAL seconds
-        to refresh the identity via face recognition.
+        Non-blocking. Returns the cached patient_id immediately.
+        Kicks off background work every FACE_RECOGNITION_INTERVAL seconds.
         """
         now = time.time()
         if self._busy or (now - self._last_check < FACE_RECOGNITION_INTERVAL):
@@ -211,9 +235,14 @@ class PatientIdentifier:
         self._last_check = now
 
         if yolo_boxes is None or len(yolo_boxes) == 0:
+            # No person in frame
+            if self.state == self.STATE_TRACKING:
+                self._tracking_lost_count += 1
+                if self._tracking_lost_count >= self.TRACKING_LOST_THRESHOLD:
+                    self._transition_to_identifying("No person detected for multiple checks")
             return self.patient_id
 
-        # Crop the best person detection for face recognition
+        # Crop the best person detection
         best = yolo_boxes[yolo_boxes.conf.argmax()]
         x1, y1, x2, y2 = [int(v) for v in best.xyxy[0].cpu().numpy()]
         h, w = frame.shape[:2]
@@ -224,17 +253,22 @@ class PatientIdentifier:
         if person_crop.size == 0:
             return self.patient_id
 
-        # Encode JPEG on main thread (fast, ~1-2 ms) then send in background
         _, buf = cv2.imencode(".jpg", person_crop)
         jpeg_bytes = buf.tobytes()
 
         self._busy = True
-        threading.Thread(target=self._do_identify, args=(jpeg_bytes,), daemon=True).start()
+        if self.state == self.STATE_IDENTIFYING:
+            threading.Thread(target=self._do_face_recognition, args=(jpeg_bytes,), daemon=True).start()
+        else:
+            threading.Thread(target=self._do_tracking, args=(jpeg_bytes,), daemon=True).start()
 
         return self.patient_id
 
-    def _do_identify(self, jpeg_bytes):
-        """Background thread: call AI face server + Django lookup."""
+    # ------------------------------------------------------------------
+    # Phase 1: Face Recognition (runs until patient is identified)
+    # ------------------------------------------------------------------
+    def _do_face_recognition(self, jpeg_bytes):
+        """Background thread: call /analyze-face to identify the patient."""
         try:
             resp = requests.post(
                 f"{AI_FACE_SERVER_URL}/analyze-face",
@@ -251,24 +285,125 @@ class PatientIdentifier:
             is_known = payload.get("known", False)
 
             if not is_known or not person_name:
-                if self.patient_id is not None:
-                    print(f" Unknown person detected -- clearing patient identity")
-                self.patient_id = None
-                self.patient_name = None
-                return
+                return  # Keep trying next interval
 
             pid = self._resolve_patient_id(person_name)
             if pid:
-                if pid != self.patient_id:
-                    print(f" Patient identified: {person_name} (id={pid})")
+                first_time = pid != self.patient_id
                 self.patient_id = pid
                 self.patient_name = person_name
+                if first_time:
+                    print(f" Patient identified: {person_name} (id={pid})")
+                    _flush_pending_events(pid)
+
+                # Get embedding for tracking via /track-person
+                self._fetch_and_store_embedding(jpeg_bytes)
+
+                # Transition to tracking phase
+                self.state = self.STATE_TRACKING
+                self._tracking_lost_count = 0
+                print(f" Switching to person tracking mode")
 
         except Exception:
             pass
         finally:
             self._busy = False
 
+    def _fetch_and_store_embedding(self, jpeg_bytes):
+        """Call /track-person to get and store the face embedding."""
+        try:
+            resp = requests.post(
+                f"{AI_FACE_SERVER_URL}/track-person",
+                files={"frame": ("face.jpg", jpeg_bytes, "image/jpeg")},
+                data={"patient_id": self.patient_id or "camera_auto"},
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("face_detected") and data.get("embedding"):
+                    self._known_embedding = data["embedding"]
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Phase 2: Person Tracking (maintains identity via embedding similarity)
+    # ------------------------------------------------------------------
+    def _do_tracking(self, jpeg_bytes):
+        """Background thread: call /track-person and compare embeddings."""
+        try:
+            resp = requests.post(
+                f"{AI_FACE_SERVER_URL}/track-person",
+                files={"frame": ("face.jpg", jpeg_bytes, "image/jpeg")},
+                data={"patient_id": self.patient_id or "camera_auto"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                self._tracking_lost_count += 1
+                self._check_lost()
+                return
+
+            data = resp.json()
+
+            if not data.get("face_detected") or not data.get("embedding"):
+                # Face not visible — tolerate a few misses before resetting
+                self._tracking_lost_count += 1
+                self._check_lost()
+                return
+
+            current_embedding = data["embedding"]
+
+            if self._known_embedding is not None:
+                dist = self._cosine_distance(self._known_embedding, current_embedding)
+                if dist <= self.EMBEDDING_SIMILARITY_THRESHOLD:
+                    # Same person — reset lost counter, update embedding
+                    self._tracking_lost_count = 0
+                    self._known_embedding = current_embedding
+                else:
+                    # Different person detected
+                    self._tracking_lost_count += 1
+                    print(f" Tracking: different person detected (distance={dist:.2f})")
+                    self._check_lost()
+            else:
+                # No stored embedding — store this one
+                self._known_embedding = current_embedding
+                self._tracking_lost_count = 0
+
+        except Exception:
+            self._tracking_lost_count += 1
+            self._check_lost()
+        finally:
+            self._busy = False
+
+    @staticmethod
+    def _cosine_distance(emb_a, emb_b):
+        """Compute cosine distance between two embedding vectors."""
+        import numpy as _np
+        a = _np.array(emb_a)
+        b = _np.array(emb_b)
+        dot = _np.dot(a, b)
+        norm = (_np.linalg.norm(a) * _np.linalg.norm(b))
+        if norm == 0:
+            return 1.0
+        return 1.0 - (dot / norm)
+
+    def _check_lost(self):
+        """If lost count exceeds threshold, transition back to face recognition."""
+        if self._tracking_lost_count >= self.TRACKING_LOST_THRESHOLD:
+            self._transition_to_identifying("Person lost during tracking")
+
+    def _transition_to_identifying(self, reason):
+        """Clear identity and switch back to face recognition phase."""
+        if self.patient_id is not None:
+            print(f" {reason} -- switching to face recognition mode")
+        self.patient_id = None
+        self.patient_name = None
+        self._known_embedding = None
+        self._tracking_lost_count = 0
+        self.state = self.STATE_IDENTIFYING
+
+    # ------------------------------------------------------------------
+    # Shared helper
+    # ------------------------------------------------------------------
     def _resolve_patient_id(self, person_name):
         """Look up person_name in Django to get the patient_id. Results are cached."""
         if person_name in self._name_to_id_cache:
@@ -295,9 +430,25 @@ def _send_activity_event(patient_id, activity, confidence, is_wandering=False, w
     """
     POST activity event to Django API in a background thread.
     Respects per-activity cooldowns to avoid flooding.
+    Critical events (FALL, CHEST_PAIN) are queued if patient_id is unavailable
+    and automatically flushed once the patient is identified.
     """
     if not patient_id:
-        return  # No patient identified yet
+        if activity in _CRITICAL_ACTIVITIES:
+            with _pending_lock:
+                if len(_pending_events) < _PENDING_MAX:
+                    _pending_events.append({
+                        "activity": activity,
+                        "confidence": float(confidence),
+                        "is_wandering": is_wandering,
+                        "walk_duration": float(walk_duration),
+                        "queued_at": time.time(),
+                    })
+                    print(f"\u26a0\ufe0f  {activity} queued — waiting for patient identification ({len(_pending_events)} pending)")
+        return
+
+    # Flush any events that were queued before patient_id was available
+    _flush_pending_events(patient_id)
 
     now = time.time()
     key = "WANDERING" if is_wandering else activity
@@ -317,19 +468,44 @@ def _send_activity_event(patient_id, activity, confidence, is_wandering=False, w
                     "is_wandering": is_wandering,
                     "walk_duration_seconds": float(walk_duration),
                 },
-                timeout=5,
+                timeout=15,  # Increased API timeout from 5s to 15s
             )
             if resp.status_code == 201:
                 data = resp.json()
                 alerts = data.get("alerts_created", 0)
                 if alerts > 0:
                     print(f"\U0001f6a8 Alert sent: {activity} -> {alerts} caregiver(s) notified")
+                else:
+                    print(f"Event sent: {activity} (no new alert — cooldown or known person)")
             else:
-                print(f"\u26a0\ufe0f  Django API error: {resp.status_code}")
+                print(f"Django API error: {resp.status_code} — {resp.text[:200]}")
         except Exception as e:
-            print(f"\u26a0\ufe0f  Could not reach Django API: {e}")
+            print(f" Could not reach Django API: {e}")
 
     threading.Thread(target=_post, daemon=True).start()
+
+
+def _flush_pending_events(patient_id):
+    """
+    Send all queued critical events now that patient_id is available.
+    Called automatically when face recognition resolves the patient.
+    """
+    with _pending_lock:
+        events = list(_pending_events)
+        _pending_events.clear()
+
+    if not events:
+        return
+
+    print(f"\U0001f4e4 Flushing {len(events)} queued event(s) for patient {patient_id}")
+    for evt in events:
+        _send_activity_event(
+            patient_id,
+            evt["activity"],
+            evt["confidence"],
+            is_wandering=evt["is_wandering"],
+            walk_duration=evt["walk_duration"],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -461,13 +637,16 @@ def run_camera():
         wandering.update(last_pred or "", bbox_center)
 
         # 6️ Send events to Django API for alerting (only if patient identified)
+        #    Read identifier.patient_id directly — the local variable may be stale
+        #    if the background face-recognition thread updated it mid-frame.
+        current_pid = identifier.patient_id
         if last_pred == "FALL":
-            _send_activity_event(patient_id, "FALL", last_conf)
+            _send_activity_event(current_pid, "FALL", last_conf)
         elif last_pred == "CHEST_PAIN":
-            _send_activity_event(patient_id, "CHEST_PAIN", last_conf)
+            _send_activity_event(current_pid, "CHEST_PAIN", last_conf)
         if wandering.is_wandering:
             walk_secs = wandering._walk_frames / TARGET_FPS
-            _send_activity_event(patient_id, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
+            _send_activity_event(current_pid, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
 
         # FPS control
         current_time = time.time()
@@ -486,15 +665,18 @@ def run_camera():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
         # Patient identity
-        if identifier.patient_name:
+        if identifier.patient_name and identifier.state == identifier.STATE_TRACKING:
+            id_text = f"Patient: {identifier.patient_name} [Tracking]"
+            id_color = (0, 255, 0)
+        elif identifier.patient_name:
             id_text = f"Patient: {identifier.patient_name}"
             id_color = (0, 255, 0)
-        elif identifier.patient_id is None and identifier._last_check > 0:
-            id_text = "Patient: Unknown Person"
-            id_color = (0, 0, 255)
-        else:
+        elif identifier.state == identifier.STATE_IDENTIFYING and identifier._last_check > 0:
             id_text = "Patient: Identifying..."
             id_color = (0, 200, 255)
+        else:
+            id_text = "Patient: Waiting..."
+            id_color = (180, 180, 180)
         cv2.putText(frame, id_text, (10, 65),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, id_color, 2)
 
