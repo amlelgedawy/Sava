@@ -251,6 +251,10 @@ class PatientIdentifier:
             is_known = payload.get("known", False)
 
             if not is_known or not person_name:
+                if self.patient_id is not None:
+                    print(f" Unknown person detected -- clearing patient identity")
+                self.patient_id = None
+                self.patient_name = None
                 return
 
             pid = self._resolve_patient_id(person_name)
@@ -485,6 +489,9 @@ def run_camera():
         if identifier.patient_name:
             id_text = f"Patient: {identifier.patient_name}"
             id_color = (0, 255, 0)
+        elif identifier.patient_id is None and identifier._last_check > 0:
+            id_text = "Patient: Unknown Person"
+            id_color = (0, 0, 255)
         else:
             id_text = "Patient: Identifying..."
             id_color = (0, 200, 255)
