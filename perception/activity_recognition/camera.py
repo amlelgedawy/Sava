@@ -236,13 +236,17 @@ def run_camera():
     prev_time   = 0
     last_pred   = None
     last_conf   = 0.0
+    fall_consec = 0   # consecutive frames where smoothed prediction == FALL
     # Temporal smoothing: average softmax probs over last 15 frames
     # to eliminate single-frame spikes (random FALL, etc.)
     SMOOTH_WINDOW     = 15
     CONFIDENCE_THRESH = 0.60   # below this → show "Uncertain"
     # FALL requires higher confidence — false alarms are worse than missed detections
     CLASS_THRESHOLDS  = {"FALL": 0.75, "CHEST_PAIN": 0.75}
-    probs_buffer      = deque(maxlen=SMOOTH_WINDOW)
+    # FALL must be the smoothed prediction for this many consecutive frames before alerting.
+    # Genuine falls persist; arm-raise-while-drinking lasts only a few frames.
+    FALL_PERSIST_FRAMES = 10
+    probs_buffer        = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
         ret, frame = cap.read()
@@ -276,6 +280,12 @@ def run_camera():
                 else:
                     last_pred = None   # show "Uncertain"
                     last_conf = best_conf
+
+        # Update FALL persistence counter
+        if last_pred == "FALL":
+            fall_consec += 1
+        else:
+            fall_consec = 0
 
         # 4️⃣ Wandering Detection (only meaningful when label is confident)
         wandering.update(last_pred or "", bbox_center)
@@ -316,9 +326,9 @@ def run_camera():
             cv2.putText(frame, "⚠ WANDERING DETECTED", (10, 105),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        # Fall alert (model-based, immediate)
-        if last_pred == "FALL":
-            cv2.putText(frame, "🚨 FALL DETECTED", (10, 145),
+        # Fall alert — requires FALL_PERSIST_FRAMES consecutive frames to suppress arm-raise false positives
+        if fall_consec >= FALL_PERSIST_FRAMES:
+            cv2.putText(frame, "FALL DETECTED", (10, 145),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
         cv2.imshow("SAVA - Alzheimer Monitoring", frame)
