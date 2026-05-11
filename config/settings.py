@@ -3,15 +3,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from mongoengine import connect
 
-# --------------------------------------------------
 # Base
-# --------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-# --------------------------------------------------
 # Security / Debug
-# --------------------------------------------------
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
 
 DEBUG = os.getenv("DEBUG", "True") == "True"
@@ -20,9 +16,7 @@ ALLOWED_HOSTS = os.getenv(
     "ALLOWED_HOSTS", "127.0.0.1,localhost"
 ).split(",")
 
-# --------------------------------------------------
 # Applications
-# --------------------------------------------------
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -37,9 +31,7 @@ INSTALLED_APPS = [
     "apps.monitoring",
 ]
 
-# --------------------------------------------------
 # Middleware
-# --------------------------------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -50,16 +42,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# --------------------------------------------------
 # URLs / WSGI
-# --------------------------------------------------
 ROOT_URLCONF = "config.urls_config"
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# --------------------------------------------------
 # Templates (required even if API-only)
-# --------------------------------------------------
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -76,9 +64,7 @@ TEMPLATES = [
     },
 ]
 
-# --------------------------------------------------
 # Database (MongoDB via MongoEngine)
-# --------------------------------------------------
 MONGODB_URI = os.getenv(
     "MONGODB_URI", "mongodb://localhost:27017/sava"
 )
@@ -88,10 +74,12 @@ connect(
     uuidRepresentation="standard"
 )
 
-# --------------------------------------------------
 # Static files
-# --------------------------------------------------
 STATIC_URL = "/static/"
+
+# Media files (uploads)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

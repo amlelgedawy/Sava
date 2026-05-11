@@ -13,7 +13,7 @@ def _serialize_alert(a: Alert) -> dict:
     return {
         "id": str(a.id),
         "patient_id": str(a.patient.id) if a.patient else None,
-        "caregiver_id": str(a.caregiver.id) if a.caregiver else None,
+        "recipient_id": str(a.recipient.id) if a.recipient else None,
         "event_id": str(a.event.id) if a.event else None,
         "alert_type": a.alert_type,
         "message": a.message,
@@ -24,21 +24,21 @@ def _serialize_alert(a: Alert) -> dict:
 
 class AlertsListView(APIView):
     """
-    GET /api/alerts?caregiver_id=<id>&patient_id=<id>&status=NEW|SEEN
+    GET /api/alerts?recipient_id=<id>&patient_id=<id>&status=NEW|SEEN|DISMISSED
     """
     def get(self, request):
-        caregiver_id = request.query_params.get("caregiver_id")
+        recipient_id = request.query_params.get("recipient_id")
         patient_id = request.query_params.get("patient_id")
         status_q = request.query_params.get("status")
 
         q = Alert.objects
 
-        # Filter caregiver (most common)
-        if caregiver_id:
+        # Filter recipient (caregiver or relative)
+        if recipient_id:
             try:
-                q = q.filter(caregiver=ObjectId(caregiver_id))
+                q = q.filter(recipient=ObjectId(recipient_id))
             except Exception:
-                return Response({"detail": "Invalid caregiver_id."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "Invalid recipient_id."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Optional: filter patient
         if patient_id:
@@ -50,8 +50,8 @@ class AlertsListView(APIView):
         # Optional: filter status
         if status_q:
             status_q = status_q.strip().upper()
-            if status_q not in ("NEW", "SEEN"):
-                return Response({"detail": "status must be NEW or SEEN."}, status=status.HTTP_400_BAD_REQUEST)
+            if status_q not in ("NEW", "SEEN", "DISMISSED"):
+                return Response({"detail": "status must be NEW, SEEN, or DISMISSED."}, status=status.HTTP_400_BAD_REQUEST)
             q = q.filter(status=status_q)
 
         alerts = list(q.order_by("-created_at").limit(200))

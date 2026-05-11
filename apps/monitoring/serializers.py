@@ -15,4 +15,4 @@ class SimulateEventSerializer(serializers.Serializer):
     payload = serializers.DictField(required=False, default=dict)
     
 class AlertUpdateSerializer(serializers.Serializer):
-    status = serializers.ChoiceField(choices=["NEW", "SEEN"])
+    status = serializers.ChoiceField(choices=["NEW", "SEEN", "DISMISSED"])

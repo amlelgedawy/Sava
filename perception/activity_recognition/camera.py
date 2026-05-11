@@ -476,7 +476,7 @@ def _send_activity_event(patient_id, activity, confidence, is_wandering=False, w
                 if alerts > 0:
                     print(f"\U0001f6a8 Alert sent: {activity} -> {alerts} caregiver(s) notified")
                 else:
-                    print(f"Event sent: {activity} (no new alert — cooldown or known person)")
+                    print(f"    Event sent: {activity} (no new alert — cooldown or known person)")
             else:
                 print(f"Django API error: {resp.status_code} — {resp.text[:200]}")
         except Exception as e:

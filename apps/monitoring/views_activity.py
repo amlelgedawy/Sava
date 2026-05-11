@@ -2,8 +2,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from apps.accounts.services.user_service import UserService
-from apps.monitoring.models import Event, User
+from apps.accounts.services.patient_service import PatientService
+from apps.monitoring.models import Event, Patient
 from apps.monitoring.services.event_service import EventService
 from apps.monitoring.services.alert_service import AlertService
 
@@ -40,7 +40,7 @@ class ActivityEventView(APIView):
             )
 
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -134,7 +134,7 @@ class ActivityHistoryView(APIView):
             )
 
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -184,22 +184,21 @@ class PatientLookupView(APIView):
             )
 
         # Case-insensitive search for patients matching this name
-        patients = User.objects(role=User.ROLE_PATIENT, name__icontains=name)
+        matches = Patient.objects(name__icontains=name)
 
-        if not patients:
+        if not matches:
             return Response(
                 {"found": False, "patient_id": None, "name": name},
                 status=status.HTTP_200_OK,
             )
 
         # Return the first matching patient
-        patient = patients.first()
+        patient = matches.first()
         return Response(
             {
                 "found": True,
                 "patient_id": str(patient.id),
                 "name": patient.name,
-                "role": patient.role,
             },
             status=status.HTTP_200_OK,
         )

@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 import asyncio
 
-from apps.accounts.services.user_service import UserService, NotFoundError
+from apps.accounts.services.patient_service import PatientService
+from apps.accounts.services.base import NotFoundError
 from apps.monitoring.serializers import FrameIngestSerializer
 from apps.monitoring.services.ai_client import track_person, AIClientError
 from apps.monitoring.services.person_tracking_service import PersonTrackingService
@@ -31,7 +32,7 @@ class PersonTrackingView(APIView):
 
         # 1) Validate patient exists
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -172,7 +173,7 @@ class ActivePersonsView(APIView):
             return Response({"detail": "patient_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -211,7 +212,7 @@ class CleanupPersonsView(APIView):
             return Response({"detail": "patient_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 

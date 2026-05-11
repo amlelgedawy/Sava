@@ -3,7 +3,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 
-from apps.accounts.services.user_service import UserService, NotFoundError
+from apps.accounts.services.patient_service import PatientService
+from apps.accounts.services.base import NotFoundError
 from apps.monitoring.serializers import FrameIngestSerializer
 from apps.monitoring.services.ai_client import analyze_face, AIClientError
 from apps.monitoring.services.event_service import EventService
@@ -27,9 +28,9 @@ class FrameIngestView(APIView):
         patient_id = ser.validated_data["patient_id"]
         frame_file = ser.validated_data["frame"]
 
-        # 1) Validate pa    tient exists
+        # 1) Validate patient exists
         try:
-            patient = UserService.get_user_by_id(patient_id)
+            patient = PatientService.get_patient_by_id(patient_id)
         except Exception:
             return Response({"detail": "Patient not found."}, status=status.HTTP_404_NOT_FOUND)
 
