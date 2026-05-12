@@ -4,6 +4,36 @@ from django.conf import settings
 class AIClientError(Exception):
     pass
 
+
+def detect_objects(image_file) -> dict:
+    """
+    Sends multipart image to the Object Detection server and returns JSON result.
+    Expected JSON shape:
+      {
+        "detections": [
+          {
+            "label": "knife",
+            "confidence": 0.87,
+            "danger_level": "HIGH",
+            "is_dangerous": true,
+            "box": {"x1": 0.1, "y1": 0.2, "x2": 0.4, "y2": 0.6}
+          }
+        ]
+      }
+    """
+    url = settings.OBJECT_DETECTION_SERVER_URL.rstrip("/") + "/detect"
+
+    files = {
+        "frame": (getattr(image_file, "name", "frame.jpg"), image_file, getattr(image_file, "content_type", "image/jpeg"))
+    }
+
+    try:
+        resp = requests.post(url, files=files, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise AIClientError(f"Object detection server request failed: {str(e)}")
+
 def analyze_face(image_file, patient_id: str) -> dict:
     """
     Sends multipart image to AI server and returns JSON result.

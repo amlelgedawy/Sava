@@ -17,6 +17,7 @@ from .config import (
 )
 from .detector import detect_person
 from .pose_estimator import PoseEstimator
+from perception.object_detection import DangerousObjectDetector
 
 # ----------------------------
 # SkateFormer paths & config
@@ -181,6 +182,7 @@ _ALERT_COOLDOWNS = {
     "FALL": 30,
     "CHEST_PAIN": 30,
     "WANDERING": 120,
+    "DANGEROUS_OBJECT": 60,
 }
 _last_alert_time = {}
 
@@ -508,6 +510,57 @@ def _flush_pending_events(patient_id):
         )
 
 
+def _send_object_detection_event(patient_id, detections):
+    """
+    POST dangerous object detection events to Django API in a background thread.
+    Each detection becomes a separate event. Respects cooldown per object class.
+    """
+    if not patient_id or not detections:
+        return
+
+    now = time.time()
+    events_to_send = []
+    for det in detections:
+        key = f"DANGEROUS_OBJECT_{det['label']}"
+        cooldown = _ALERT_COOLDOWNS.get("DANGEROUS_OBJECT", 60)
+        if now - _last_alert_time.get(key, 0) < cooldown:
+            continue
+        _last_alert_time[key] = now
+        events_to_send.append(det)
+
+    if not events_to_send:
+        return
+
+    def _post():
+        for det in events_to_send:
+            try:
+                resp = requests.post(
+                    f"{DJANGO_API_URL}/object-detection/event",
+                    json={
+                        "patient_id": patient_id,
+                        "label": det["label"],
+                        "confidence": det["confidence"],
+                        "danger_level": det["danger_level"],
+                        "box": det.get("box_norm", {}),
+                    },
+                    timeout=15,
+                )
+                if resp.status_code == 201:
+                    data = resp.json()
+                    alerts = data.get("alerts_created", 0)
+                    level = det["danger_level"]
+                    if alerts > 0:
+                        print(f"\U0001f6a8 DANGEROUS OBJECT [{level}]: {det['label']} ({det['confidence']:.0%}) -> {alerts} alert(s) sent")
+                    else:
+                        print(f"    Object event: {det['label']} [{level}] (no new alert — cooldown)")
+                else:
+                    print(f"Django API error (object detection): {resp.status_code} — {resp.text[:200]}")
+            except Exception as e:
+                print(f" Could not send object event: {e}")
+
+    threading.Thread(target=_post, daemon=True).start()
+
+
 # ---------------------------------------------------------------------------
 # Camera helpers
 # ---------------------------------------------------------------------------
@@ -578,6 +631,12 @@ def run_camera():
     wandering  = WanderingDetector()
     identifier = PatientIdentifier()
 
+    # Dangerous object detector
+    obj_detector = DangerousObjectDetector()
+    obj_loaded = obj_detector.load()
+    if not obj_loaded:
+        print("  Object detection disabled — model not found.")
+
     cap      = initialize_camera()
     recorder = initialize_recorder()
 
@@ -633,10 +692,13 @@ def run_camera():
                     last_pred = None   # show "Uncertain"
                     last_conf = best_conf
 
-        # 5️ Wandering Detection (only meaningful when label is confident)
+        # 5️ Dangerous Object Detection (runs every OBJECT_DETECTION_INTERVAL seconds)
+        obj_detections = obj_detector.detect(raw_frame)
+
+        # 6️ Wandering Detection (only meaningful when label is confident)
         wandering.update(last_pred or "", bbox_center)
 
-        # 6️ Send events to Django API for alerting (only if patient identified)
+        # 7️ Send events to Django API for alerting (only if patient identified)
         #    Read identifier.patient_id directly — the local variable may be stale
         #    if the background face-recognition thread updated it mid-frame.
         current_pid = identifier.patient_id
@@ -647,6 +709,8 @@ def run_camera():
         if wandering.is_wandering:
             walk_secs = wandering._walk_frames / TARGET_FPS
             _send_activity_event(current_pid, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
+        if obj_detections:
+            _send_object_detection_event(current_pid, obj_detections)
 
         # FPS control
         current_time = time.time()
@@ -703,6 +767,16 @@ def run_camera():
         if last_pred == "FALL":
             cv2.putText(frame, " FALL DETECTED", (10, 175),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
+
+        # Dangerous object overlays (bounding boxes + labels on frame)
+        if obj_detector.is_loaded and obj_detector.last_detections:
+            frame = obj_detector.draw_detections(frame)
+            y_off = 215
+            for det in obj_detector.last_detections:
+                obj_text = f"DANGER: {det['label'].upper()} [{det['danger_level']}]"
+                cv2.putText(frame, obj_text, (10, y_off),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                y_off += 30
 
         cv2.imshow("SAVA - Alzheimer Monitoring", frame)
 
