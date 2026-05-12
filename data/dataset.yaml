@@ -1,0 +1,9 @@
+path: C:\Users\Nezar\Downloads\Object detection\data
+train: C:\Users\Nezar\Downloads\Object detection\data\train\images\val
+val: C:\Users\Nezar\Downloads\Object detection\data\val\images\val
+nc: 4
+names:
+- knife
+- scissors
+- gun
+- syringe

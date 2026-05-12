@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+env/
+.env
+
+# YOLO model weight (download from Ultralytics)
+yolov8n.pt
+
+# SkateFormer pretrained weights (download separately, 182MB+)
+SkateFormer/skateformer_pretrained_weights/
+
+# Extracted keypoints data (regenerate by running extraction scripts)
+perception/activity_recognition/data/keypoints/
+perception/activity_recognition/data/keypoints_v2/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+*.log
+node_modules/
+.env
+
+uploads/

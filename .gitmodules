@@ -1,0 +1,3 @@
+[submodule "SkateFormer"]
+	path = SkateFormer
+	url = https://github.com/KAIST-VICLab/SkateFormer.git
