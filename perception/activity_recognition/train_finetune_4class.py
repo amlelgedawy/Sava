@@ -1,4 +1,6 @@
+import re
 import random
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -78,27 +80,41 @@ def list_files_for_class(cls_name):
 
 def build_split():
     train_items = []
-    val_items = []
+    val_items   = []
 
     for cls in CLASS_NAMES:
         files = list_files_for_class(cls)
         if len(files) == 0:
             raise RuntimeError(f"No files found for class: {cls} in {KEYPOINTS_DIR}")
 
-        # Optional cap for speed
-        if MAX_SAMPLES_PER_CLASS is not None:
-            files = files[:MAX_SAMPLES_PER_CLASS]
+        # Group windows by source video — strip _w{nn} suffix to get the video ID.
+        # This prevents overlapping windows from the same video appearing in both splits.
+        video_groups = defaultdict(list)
+        for f in files:
+            stem     = Path(f).stem                   # e.g. "ntu_S001C001P001R001A001_rgb_w00"
+            video_id = re.sub(r'_w\d+$', '', stem)    # → "ntu_S001C001P001R001A001_rgb"
+            video_groups[video_id].append(f)
 
-        random.shuffle(files)
-        n_val = max(1, int(len(files) * VAL_RATIO))
-        val_files = files[:n_val]
-        train_files = files[n_val:]
+        video_ids = sorted(video_groups.keys())
+        random.shuffle(video_ids)
+
+        n_val_vids = max(1, int(len(video_ids) * VAL_RATIO))
+        val_ids    = set(video_ids[:n_val_vids])
+        train_ids  = set(video_ids[n_val_vids:])
+
+        train_files = [f for vid in train_ids for f in video_groups[vid]]
+        val_files   = [f for vid in val_ids   for f in video_groups[vid]]
+
+        # Cap train only — val is never capped so accuracy is representative
+        if MAX_SAMPLES_PER_CLASS is not None and len(train_files) > MAX_SAMPLES_PER_CLASS:
+            random.shuffle(train_files)
+            train_files = train_files[:MAX_SAMPLES_PER_CLASS]
 
         cid = CLASS_TO_ID[cls]
         train_items.extend([(f, cid) for f in train_files])
         val_items.extend([(f, cid) for f in val_files])
 
-        print(f"{cls}: total={len(files)} train={len(train_files)} val={len(val_files)}")
+        print(f"{cls}: {len(video_ids)} videos → {len(train_files)} train / {len(val_files)} val windows")
 
     random.shuffle(train_items)
     random.shuffle(val_items)
