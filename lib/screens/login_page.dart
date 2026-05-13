@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme.dart';
 import '../app_state.dart';
-import '../services/database_service.dart';
-import 'signup_page.dart';
-import 'main_wrapper.dart';
+import '../models/user_models.dart';
+import '../services/mock_service.dart';
+import 'auth/landing_page.dart';
+import 'caregiver/caregiver_wrapper.dart';
+import 'relative/relative_wrapper.dart';
+import 'admin/admin_wrapper.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -13,45 +16,66 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  String? _emailError;
-
-  @override
-  void initState() {
-    super.initState();
-    AppState.isLoggedIn.addListener(_onLoginSuccess);
-    AppState.authError.addListener(_onAuthError);
-  }
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+  bool _loading = false;
+  bool _passVisible = false;
+  String? _error;
 
   @override
   void dispose() {
-    AppState.isLoggedIn.removeListener(_onLoginSuccess);
-    AppState.authError.removeListener(_onAuthError);
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
     super.dispose();
   }
 
-  void _onLoginSuccess() {
-    if (AppState.isLoggedIn.value && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
-      );
-    }
-  }
+  Future<void> _login() async {
+    final email = _emailCtrl.text.trim();
+    final password = _passCtrl.text;
+    if (email.isEmpty || password.isEmpty) return;
 
-  void _onAuthError() {
-    if (AppState.authError.value != null && mounted) {
-      setState(() => _emailError = AppState.authError.value);
-    }
-  }
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
-  void _login() {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty)
+    final user = await MockService.instance.login(email, password);
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (user == null) {
+      setState(() => _error = 'Invalid email or password');
       return;
-    DatabaseService.login(
-      email: _emailController.text,
-      password: _passwordController.text,
+    }
+
+    AppState.currentUser.value = user;
+    AppState.userRole.value = user.role;
+    if (user is CaregiverUser) {
+      AppState.caregiverName.value = user.name;
+      AppState.caregiverId.value = user.id;
+    } else {
+      AppState.caregiverName.value = user.name;
+    }
+    AppState.isLoggedIn.value = true;
+
+    Widget dest;
+    switch (user.role) {
+      case UserRole.caregiver:
+        dest = const CaregiverWrapper();
+        break;
+      case UserRole.relative:
+        dest = const RelativeWrapper();
+        break;
+      case UserRole.admin:
+        dest = const AdminWrapper();
+        break;
+    }
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => dest),
+      (_) => false,
     );
   }
 
@@ -59,78 +83,97 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: SovaColors.bg,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios,
+              color: SovaColors.charcoal, size: 20),
+          onPressed: () => Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const LandingPage()),
+          ),
+        ),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 60),
-              Text(
-                "SAVA",
-                style: SovaTheme.textTheme.labelMedium,
-              ).animate().fadeIn(),
+              const SizedBox(height: 20),
+              Text('SAVA', style: SovaTheme.textTheme.labelMedium)
+                  .animate()
+                  .fadeIn(),
+              const SizedBox(height: 8),
+              Text('Welcome Back', style: SovaTheme.textTheme.displayMedium)
+                  .animate()
+                  .fadeIn(delay: 100.ms),
               const SizedBox(height: 8),
               Text(
-                "Welcome Back",
-                style: SovaTheme.textTheme.displayMedium,
-              ).animate().fadeIn(delay: 100.ms),
-              const SizedBox(height: 48),
-              _buildField(_emailController, "Email", Icons.email_outlined),
+                'Sign in to continue',
+                style: TextStyle(color: SovaColors.sage, fontSize: 15),
+              ).animate().fadeIn(delay: 180.ms),
+              const SizedBox(height: 40),
+              _field(_emailCtrl, 'Email', Icons.email_outlined,
+                  type: TextInputType.emailAddress),
               const SizedBox(height: 16),
-              _buildField(
-                _passwordController,
-                "Password",
-                Icons.lock_outline,
-                obscure: true,
-              ),
-              if (_emailError != null)
+              _field(_passCtrl, 'Password', Icons.lock_outline,
+                  obscure: !_passVisible,
+                  suffix: IconButton(
+                    icon: Icon(
+                        _passVisible ? Icons.visibility_off : Icons.visibility,
+                        color: SovaColors.sage),
+                    onPressed: () =>
+                        setState(() => _passVisible = !_passVisible),
+                  )),
+              if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),
-                  child: Text(
-                    _emailError!,
-                    style: const TextStyle(color: SovaColors.danger),
-                  ),
+                  child: Text(_error!,
+                      style: const TextStyle(color: SovaColors.danger)),
                 ),
               const SizedBox(height: 32),
-              ValueListenableBuilder<bool>(
-                valueListenable: AppState.isAuthLoading,
-                builder: (context, loading, _) => GestureDetector(
-                  onTap: loading ? null : _login,
-                  child: Container(
-                    width: double.infinity,
-                    height: 60,
-                    decoration: BoxDecoration(
+              GestureDetector(
+                onTap: _loading ? null : _login,
+                child: Container(
+                  width: double.infinity,
+                  height: 60,
+                  decoration: BoxDecoration(
                       color: SovaColors.charcoal,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Center(
-                      child: loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              "Login",
-                              style: TextStyle(
+                      borderRadius: BorderRadius.circular(30)),
+                  child: Center(
+                    child: _loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Sign In',
+                            style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                    ),
+                                fontSize: 16)),
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              Center(
-                child: TextButton(
-                  onPressed: () => Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SignupPage()),
-                  ),
-                  child: const Text(
-                    "Create account",
-                    style: TextStyle(color: SovaColors.sage),
-                  ),
+              const SizedBox(height: 32),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                    color: SovaColors.softGlass,
+                    borderRadius: BorderRadius.circular(16)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Demo Accounts',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: SovaColors.charcoal)),
+                    const SizedBox(height: 8),
+                    _demoRow('Caregiver', 'ahmed@sava.com', 'pass123'),
+                    _demoRow('Relative', 'mohamed@sava.com', 'pass123'),
+                    _demoRow('Admin', 'admin@sava.com', 'admin123'),
+                  ],
                 ),
-              ),
+              ).animate().fadeIn(delay: 400.ms),
             ],
           ),
         ),
@@ -138,26 +181,53 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildField(
-    TextEditingController controller,
+  Widget _field(
+    TextEditingController ctrl,
     String hint,
     IconData icon, {
     bool obscure = false,
+    TextInputType? type,
+    Widget? suffix,
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
+          color: Colors.white, borderRadius: BorderRadius.circular(28)),
       child: TextField(
-        controller: controller,
+        controller: ctrl,
         obscureText: obscure,
+        keyboardType: type,
         decoration: InputDecoration(
           hintText: hint,
-          prefixIcon: Icon(icon),
+          prefixIcon: Icon(icon, color: SovaColors.sage),
+          suffixIcon: suffix,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.all(20),
         ),
+      ),
+    );
+  }
+
+  Widget _demoRow(String role, String email, String pass) {
+    return GestureDetector(
+      onTap: () {
+        _emailCtrl.text = email;
+        _passCtrl.text = pass;
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Text('$role: ',
+              style: const TextStyle(
+                  color: SovaColors.sage, fontSize: 12)),
+          Text(email,
+              style: const TextStyle(
+                  color: SovaColors.charcoal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          Text(' / $pass',
+              style: const TextStyle(
+                  color: SovaColors.sage, fontSize: 12)),
+        ]),
       ),
     );
   }

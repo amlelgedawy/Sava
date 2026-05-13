@@ -1,15 +1,44 @@
 import 'package:flutter/material.dart';
 import 'models/patient_models.dart';
+import 'models/user_models.dart';
 import 'services/database_service.dart';
 
-// ── Face Detection Result ─────────────────────────────────────────────────────
-// Written by ApiService after each /api/frames/ingest response.
-// Read by VisionPage to draw AR bounding boxes on the camera feed.
+// ── Detected Object Result ────────────────────────────────────────────────────
+class DetectedObject {
+  final String label;
+  final double confidence;
+  final double top;
+  final double left;
+  final double bottom;
+  final double right;
+
+  const DetectedObject({
+    required this.label,
+    required this.confidence,
+    required this.top,
+    required this.left,
+    required this.bottom,
+    required this.right,
+  });
+}
+
+// ── Alert History Entry ───────────────────────────────────────────────────────
+class AlertEntry {
+  final AlertType type;
+  final String message;
+  final String time;
+
+  const AlertEntry({
+    required this.type,
+    required this.message,
+    required this.time,
+  });
+}
+
+// Keep DetectedFace for backwards compatibility
 class DetectedFace {
-  final String? name; // null = unknown face
+  final String? name;
   final bool isKnown;
-  // Normalized coordinates (0.0–1.0) relative to the camera frame.
-  // top-left origin, same convention as the Django response.
   final double top;
   final double left;
   final double bottom;
@@ -51,11 +80,17 @@ class AppState {
     [],
   );
 
-  // ---- FACE DETECTION ----
-  // Written by ApiService, read by VisionPage to draw AR boxes.
+  // ---- OBJECT DETECTION ----
+  static final ValueNotifier<List<DetectedObject>> detectedObjects =
+      ValueNotifier([]);
+
+  // ---- FACE DETECTION (backwards compat) ----
   static final ValueNotifier<List<DetectedFace>> detectedFaces = ValueNotifier(
     [],
   );
+
+  // ---- ALERT HISTORY ----
+  static final ValueNotifier<List<AlertEntry>> alertHistory = ValueNotifier([]);
 
   // ---- USER SESSION ----
   static final ValueNotifier<String?> caregiverId = ValueNotifier(null);
@@ -68,10 +103,44 @@ class AppState {
   static final ValueNotifier<String?> authError = ValueNotifier(null);
   static final ValueNotifier<bool> isAuthLoading = ValueNotifier(false);
 
-  // ---- ACTIONS (AppState delegates to services) ----
-  // Screen calls AppState.addActivity() → AppState calls DatabaseService
+  // ---- ROLE & SESSION ----
+  static final ValueNotifier<UserRole?> userRole = ValueNotifier(null);
+  static final ValueNotifier<AppUser?> currentUser = ValueNotifier(null);
+
+  // ---- ACTIONS ----
   static void addActivity(String title, IconData icon) {
     DatabaseService.addNewActivity(title, icon);
+  }
+
+  /// Call this whenever an alert is triggered to save it to history
+  static void logAlert(AlertType type) {
+    if (type == AlertType.none) return;
+    final now = DateTime.now();
+    final timeStr =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final entry = AlertEntry(
+      type: type,
+      message: _getAlertMessage(type),
+      time: timeStr,
+    );
+    alertHistory.value = [...alertHistory.value, entry];
+  }
+
+  static String _getAlertMessage(AlertType type) {
+    switch (type) {
+      case AlertType.fall:
+        return "Emergency: Fall Detected";
+      case AlertType.sharpObject:
+        return "AI Alert: Dangerous Object Detected";
+      case AlertType.unknown_face:
+        return "AI Alert: Unknown Face Detected";
+      case AlertType.wandering:
+        return "Sensor Alert: Patient Wandering";
+      case AlertType.bathroomTimeout:
+        return "Sensor Alert: Bathroom Timeout";
+      default:
+        return "Alert";
+    }
   }
 
   static String get alertMessage {
@@ -79,7 +148,7 @@ class AppState {
       case AlertType.fall:
         return "Emergency: Fall Detected";
       case AlertType.sharpObject:
-        return "AI Alert: Sharp Object Detected";
+        return "AI Alert: Dangerous Object Detected";
       case AlertType.unknown_face:
         return "AI Alert: Unknown Face Detected";
       case AlertType.wandering:

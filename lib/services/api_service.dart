@@ -4,172 +4,127 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 import 'database_service.dart';
-// DetectedFace is defined in app_state.dart and used by _handleIngestResponse
 
-// ============================================================
-//  ApiService
-//  Handles ONLY AI detection results and simulation helpers.
-//  Zero database logic lives here.
-//
-//  All database work (auth, patient, alerts) → DatabaseService
-//  All AppState reads/writes from AI results → here
-// ============================================================
-
-// Web-specific imports for frame capture
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 class ApiService {
+  // Object detection server (our YOLO server)
+  static const String _objectDetectionUrl = "http://127.0.0.1:5001";
+
+  // Face recognition server (friend's AI server)
+  static const String _faceAiUrl = "http://127.0.0.1:5000";
+
   // ==========================================================
-  // AI DETECTION HANDLERS
-  // These are called by your AI modules when they detect
-  // something. They write the result into AppState so every
-  // screen updates automatically.
+  // OBJECT DETECTION — POST /detect to port 5001
   // ==========================================================
+  static Future<void> detectObjects(Uint8List frameBytes) async {
+    try {
+      final formData = html.FormData();
+      final blob = html.Blob([frameBytes], 'image/jpeg');
+      formData.appendBlob('frame', blob, 'frame.jpg');
 
-  /// Called by your activity-recognition AI when it detects
-  /// what the patient is doing. Adds an entry to the activity log.
-  static void onActivityDetected(String activityName, IconData icon) {
-    DatabaseService.addNewActivity(activityName, icon);
-  }
+      final xhr = html.HttpRequest();
+      final completer = Completer<void>();
 
-  /// Called by your fall-detection AI.
-  static void onFallDetected() {
-    AppState.alertStatus.value = AlertType.fall;
-  }
+      xhr.open('POST', '$_objectDetectionUrl/detect');
+      xhr.onLoad.listen((_) {
+        if (xhr.status == 200) {
+          try {
+            _handleDetectionResponse(xhr.responseText ?? '{}');
+          } catch (_) {
+            AppState.detectedObjects.value = [];
+          }
+        } else {
+          AppState.detectedObjects.value = [];
+        }
+        completer.complete();
+      });
+      xhr.onError.listen((_) {
+        AppState.detectedObjects.value = [];
+        completer.complete();
+      });
 
-  /// Called by your object-detection AI when a sharp object is seen.
-  static void onSharpObjectDetected() {
-    AppState.alertStatus.value = AlertType.sharpObject;
-  }
-
-  /// Called by your face-recognition AI when an unknown face appears.
-  static void onUnknownFaceDetected() {
-    AppState.alertStatus.value = AlertType.unknown_face;
-  }
-
-  /// Called by your sensor system when the patient is in the
-  /// bathroom too long.
-  static void onBathroomTimeout() {
-    AppState.alertStatus.value = AlertType.bathroomTimeout;
-  }
-
-  /// Called by your sensor system when the patient wanders
-  /// outside a safe zone.
-  static void onWanderingDetected() {
-    AppState.alertStatus.value = AlertType.wandering;
-  }
-
-  /// Called by your heart-rate sensor with the latest BPM reading.
-  static void updateHeartRate(int bpm) {
-    AppState.heartRate.value = bpm;
-    if (bpm == 0 || bpm > 120) {
-      AppState.alertStatus.value = AlertType.fall;
+      xhr.send(formData);
+      await completer.future;
+    } catch (_) {
+      AppState.detectedObjects.value = [];
     }
   }
 
-  /// Clears any active alert (e.g. after caregiver acknowledges it).
-  static void clearAlerts() {
-    AppState.alertStatus.value = AlertType.none;
+  static void _handleDetectionResponse(String responseText) {
+    final data = json.decode(responseText) as Map<String, dynamic>;
+    final rawDetections = data['detections'] as List<dynamic>? ?? [];
+
+    final List<DetectedObject> objects = [];
+    bool hasDangerousObject = false;
+
+    const highDanger = ['knife', 'syringe'];
+    const mediumDanger = ['scissors', 'fork', 'hammer', 'screwdriver'];
+
+    for (final raw in rawDetections) {
+      final detection = raw as Map<String, dynamic>;
+      final label = (detection['label'] as String? ?? 'unknown').toLowerCase();
+      final confidence = (detection['confidence'] as num? ?? 0.0).toDouble();
+      final box = detection['box'] as Map<String, dynamic>?;
+
+      objects.add(
+        DetectedObject(
+          label: label,
+          confidence: confidence,
+          top: box != null ? (box['y1'] as num? ?? 0.0).toDouble() : 0.0,
+          left: box != null ? (box['x1'] as num? ?? 0.0).toDouble() : 0.0,
+          bottom: box != null ? (box['y2'] as num? ?? 1.0).toDouble() : 1.0,
+          right: box != null ? (box['x2'] as num? ?? 1.0).toDouble() : 1.0,
+        ),
+      );
+
+      if (highDanger.contains(label) || mediumDanger.contains(label)) {
+        hasDangerousObject = true;
+      }
+    }
+
+    AppState.detectedObjects.value = objects;
+
+    if (hasDangerousObject) {
+      if (AppState.alertStatus.value != AlertType.sharpObject) {
+        AppState.logAlert(AlertType.sharpObject);
+      }
+      AppState.alertStatus.value = AlertType.sharpObject;
+    } else if (AppState.alertStatus.value == AlertType.sharpObject) {
+      AppState.alertStatus.value = AlertType.none;
+    }
   }
 
   // ==========================================================
-  // AI FACE SERVER INTEGRATION
-  // Sends a frame (as JPEG bytes) to the face-recognition AI
-  // and updates AppState based on the result.
-  // Call this from your camera loop or wherever you capture frames.
+  // FACE RECOGNITION — POST /analyze-face to port 5000
   // ==========================================================
-
-  static const String _faceAiUrl = "http://localhost:5000";
-
-  /// Sends [frameBytes] (JPEG) to the AI face server and triggers
-  /// [onUnknownFaceDetected] if an unknown person is seen.
-  /// [patientId] is used by the server to scope the check.
-  static Future<void> analyzeFaceFrame(
-    Uint8List frameBytes, {
-    String patientId = "1",
-  }) async {
+  static Future<void> analyzeFace(Uint8List frameBytes) async {
     try {
+      final patientId = AppState.patientId.value ?? '1';
+
       final formData = html.FormData();
       final blob = html.Blob([frameBytes], 'image/jpeg');
       formData.appendBlob('frame', blob, 'frame.jpg');
       formData.append('patient_id', patientId);
 
       final xhr = html.HttpRequest();
-      // ignore: close_sinks
       final completer = Completer<void>();
 
       xhr.open('POST', '$_faceAiUrl/analyze-face');
       xhr.onLoad.listen((_) {
         if (xhr.status == 200) {
           try {
-            final data = json.decode(xhr.responseText ?? '{}');
-            final payload = data['payload'] as Map<String, dynamic>?;
-            final known = payload?['known'] as bool? ?? true;
-            if (!known) {
-              onUnknownFaceDetected();
-            }
-          } catch (_) {}
-        }
-        completer.complete();
-      });
-      xhr.onError.listen((_) => completer.complete());
-      xhr.send(formData);
-      await completer.future;
-    } catch (_) {
-      // Silently ignore - face check is best-effort
-    }
-  }
-
-  // ==========================================================
-  // FRAME INGESTION  (called by VisionPage every ~2 seconds)
-  // Sends a JPEG frame to Django /api/frames/ingest, which runs
-  // the face-recognition AI and returns bounding boxes + names.
-  // This method:
-  //   1. POSTs the frame to Django
-  //   2. Parses every detected face from the response
-  //   3. Writes them into AppState.detectedFaces  → VisionPage draws AR boxes
-  //   4. If ANY face is unknown → triggers onUnknownFaceDetected()
-  // ==========================================================
-
-  static const String _djangoUrl = "http://127.0.0.1:8000/api";
-
-  /// Main entry point called by VisionPage.
-  /// [frameBytes] – raw JPEG bytes from the camera.
-  /// [patientId]  – scopes the request on the Django side.
-  static Future<void> ingestFrame(
-    Uint8List frameBytes, {
-    String patientId = "1",
-  }) async {
-    try {
-      final formData = html.FormData();
-      final blob = html.Blob([frameBytes], 'image/jpeg');
-      formData.appendBlob('frame', blob, 'frame.jpg');
-      formData.append('patient_id', patientId);
-      // Also send caregiver_id so Django can look up the patient if needed
-      final caregiverId = AppState.caregiverId.value ?? '';
-      formData.append('caregiver_id', caregiverId);
-
-      final xhr = html.HttpRequest();
-      final completer = Completer<void>();
-
-      xhr.open('POST', '$_djangoUrl/frames/ingest/');
-      xhr.onLoad.listen((_) {
-        // Django returns 201 Created on success (not 200)
-        if (xhr.status == 200 || xhr.status == 201) {
-          try {
-            _handleIngestResponse(xhr.responseText ?? '{}');
+            _handleFaceResponse(xhr.responseText ?? '{}');
           } catch (_) {
             AppState.detectedFaces.value = [];
           }
         } else {
-          // Server error — clear stale boxes so the UI doesn't freeze
           AppState.detectedFaces.value = [];
         }
         completer.complete();
       });
       xhr.onError.listen((_) {
-        // Network error — clear stale boxes
         AppState.detectedFaces.value = [];
         completer.complete();
       });
@@ -181,69 +136,53 @@ class ApiService {
     }
   }
 
-  /// Parses the Django /api/frames/ingest JSON response and updates AppState.
-  ///
-  /// Expected response shape (Django side should return this):
-  /// {
-  ///   "faces": [
-  ///     {
-  ///       "known": true,
-  ///       "name": "john",          // null or missing if unknown
-  ///       "location": {            // normalized 0.0–1.0
-  ///         "top": 0.1, "left": 0.2, "bottom": 0.4, "right": 0.5
-  ///       }
-  ///     }
-  ///   ]
-  /// }
-  static void _handleIngestResponse(String responseText) {
+  static void _handleFaceResponse(String responseText) {
     final data = json.decode(responseText) as Map<String, dynamic>;
-    final rawFaces = data['faces'] as List<dynamic>? ?? [];
+    final payload = data['payload'] as Map<String, dynamic>?;
 
-    final List<DetectedFace> faces = [];
-    bool hasUnknown = false;
-
-    for (final raw in rawFaces) {
-      final face = raw as Map<String, dynamic>;
-      final isKnown = face['known'] as bool? ?? false;
-      final name = face['name'] as String?;
-      final loc = face['location'] as Map<String, dynamic>?;
-
-      // If AI returned no bounding box, use a centered default so the box still shows
-      faces.add(
-        DetectedFace(
-          name: name,
-          isKnown: isKnown,
-          top: loc != null ? (loc['top'] as num? ?? 0.2).toDouble() : 0.2,
-          left: loc != null ? (loc['left'] as num? ?? 0.3).toDouble() : 0.3,
-          bottom: loc != null ? (loc['bottom'] as num? ?? 0.8).toDouble() : 0.8,
-          right: loc != null ? (loc['right'] as num? ?? 0.7).toDouble() : 0.7,
-        ),
-      );
-
-      if (!isKnown) hasUnknown = true;
+    if (payload == null) {
+      AppState.detectedFaces.value = [];
+      return;
     }
 
-    // Write face list → VisionPage redraws AR boxes immediately
-    AppState.detectedFaces.value = faces;
+    final isKnown = payload['known'] as bool? ?? false;
+    final name = payload['person_name'] as String?;
 
-    // Trigger alert if any unknown face was found
-    if (hasUnknown) {
-      onUnknownFaceDetected();
+    // Build face detection result
+    // Face AI server may return location if available
+    final location = payload['location'] as Map<String, dynamic>?;
+
+    final face = DetectedFace(
+      name: name,
+      isKnown: isKnown,
+      top: location != null ? (location['top'] as num? ?? 0.2).toDouble() : 0.2,
+      left: location != null
+          ? (location['left'] as num? ?? 0.3).toDouble()
+          : 0.3,
+      bottom: location != null
+          ? (location['bottom'] as num? ?? 0.8).toDouble()
+          : 0.8,
+      right: location != null
+          ? (location['right'] as num? ?? 0.7).toDouble()
+          : 0.7,
+    );
+
+    AppState.detectedFaces.value = [face];
+
+    // Trigger unknown face alert
+    if (!isKnown) {
+      if (AppState.alertStatus.value != AlertType.unknown_face) {
+        AppState.logAlert(AlertType.unknown_face);
+      }
+      AppState.alertStatus.value = AlertType.unknown_face;
     } else if (AppState.alertStatus.value == AlertType.unknown_face) {
-      // Clear the unknown-face alert once all faces are recognised again
       AppState.alertStatus.value = AlertType.none;
     }
   }
 
   // ==========================================================
   // SIMULATION HELPERS
-  // For testing in VS Code without real hardware.
-  // These buttons exist on the home screen (the flask/speed icons).
   // ==========================================================
-
-  /// Simulates a heart-rate reading. Used by the speed-icon
-  /// button on the home screen to toggle between normal and
-  /// critical BPM for testing.
   static void simulateHeartRate(int bpm) {
     AppState.heartRate.value = bpm;
     if (bpm == 0 || bpm > 120) {
@@ -253,8 +192,6 @@ class ApiService {
     }
   }
 
-  /// Cycles through all alert types one by one. Used by the
-  /// flask-icon button on the home screen to test the alert UI.
   static void processAiDetection(AlertType currentAlert) {
     switch (currentAlert) {
       case AlertType.none:
@@ -275,5 +212,17 @@ class ApiService {
       default:
         AppState.alertStatus.value = AlertType.none;
     }
+  }
+
+  static void onFallDetected() {
+    AppState.alertStatus.value = AlertType.fall;
+  }
+
+  static void clearAlerts() {
+    AppState.alertStatus.value = AlertType.none;
+  }
+
+  static void onActivityDetected(String activityName, IconData icon) {
+    DatabaseService.addNewActivity(activityName, icon);
   }
 }

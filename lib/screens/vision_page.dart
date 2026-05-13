@@ -15,10 +15,11 @@ import '../theme.dart';
 //
 //  Flow:
 //    1. Opens the browser camera via getUserMedia → shows live <video> feed
-//    2. Every 2 s: draws the video frame onto a <canvas>, exports as JPEG blob
-//    3. Calls ApiService.ingestFrame() → POST /api/frames/ingest (Django)
-//    4. Reads AppState.detectedFaces → draws AR boxes with CustomPaint
-//    5. Reads AppState.alertStatus   → shows alert banner (also on HomePage)
+//    2. Every 2s: captures frame as JPEG
+//    3. Sends frame to BOTH:
+//       - Port 5001 → YOLO object detection → draws RED AR boxes
+//       - Port 5000 → Face recognition → draws GREEN (known) or RED (unknown) AR boxes
+//    4. Reads AppState.alertStatus → shows alert banner
 // ─────────────────────────────────────────────────────────────────────────────
 
 class VisionPage extends StatefulWidget {
@@ -39,11 +40,10 @@ class _VisionPageState extends State<VisionPage> {
   bool _isSending = false;
   static const Duration _frameInterval = Duration(seconds: 2);
 
-  // ── Actual video dimensions (set once video metadata loads) ────────────────
+  // ── Actual video dimensions ────────────────────────────────────────────────
   double _videoWidth = 1.0;
   double _videoHeight = 1.0;
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -60,9 +60,8 @@ class _VisionPageState extends State<VisionPage> {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.objectFit = 'cover'
-        ..style.transform = 'scaleX(-1)'; // un-mirror the front camera
+        ..style.transform = 'scaleX(-1)';
 
-      // Register with Flutter's platform view registry
       // ignore: undefined_prefixed_name
       ui_web.platformViewRegistry.registerViewFactory(
         _viewId,
@@ -80,7 +79,6 @@ class _VisionPageState extends State<VisionPage> {
 
       _video!.srcObject = _stream;
 
-      // Wait for video to have real dimensions before capturing frames
       _video!.onLoadedMetadata.listen((_) {
         _videoWidth = _video!.videoWidth.toDouble();
         _videoHeight = _video!.videoHeight.toDouble();
@@ -98,8 +96,6 @@ class _VisionPageState extends State<VisionPage> {
     _frameTimer = Timer.periodic(_frameInterval, (_) => _captureAndSend());
   }
 
-  /// Draws the current video frame onto a hidden <canvas>, exports as JPEG,
-  /// then hands the bytes to ApiService which does all HTTP + AppState writing.
   Future<void> _captureAndSend() async {
     if (_isSending || _video == null || !_cameraReady) return;
     if (_videoWidth <= 1 || _videoHeight <= 1) return;
@@ -125,7 +121,7 @@ class _VisionPageState extends State<VisionPage> {
           }
         }),
         'image/jpeg',
-        0.85, // quality
+        0.85,
       ]);
 
       final blob = await completer.future;
@@ -144,12 +140,11 @@ class _VisionPageState extends State<VisionPage> {
       reader.readAsArrayBuffer(blob);
       final bytes = await readerCompleter.future;
 
-      final patientId = AppState.patientId.value ?? '1';
-
-      // Hand off to ApiService — it POSTs to Django, parses faces, updates AppState
-      await ApiService.ingestFrame(bytes, patientId: patientId);
+      // Send to BOTH servers simultaneously — don't await, run in parallel
+      ApiService.detectObjects(bytes); // Port 5001 — object detection
+      ApiService.analyzeFace(bytes); // Port 5000 — face recognition
     } catch (_) {
-      // On any error just clear stale boxes
+      AppState.detectedObjects.value = [];
       AppState.detectedFaces.value = [];
     } finally {
       _isSending = false;
@@ -161,6 +156,7 @@ class _VisionPageState extends State<VisionPage> {
     _stream?.getTracks().forEach((t) => t.stop());
     _stream = null;
     _video?.srcObject = null;
+    AppState.detectedObjects.value = [];
     AppState.detectedFaces.value = [];
   }
 
@@ -170,7 +166,6 @@ class _VisionPageState extends State<VisionPage> {
     super.dispose();
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -186,9 +181,25 @@ class _VisionPageState extends State<VisionPage> {
                   ),
           ),
 
-          // ── 2. AR BOUNDING BOXES ──────────────────────────────────────────
-          // Green = known face,  Red = unknown face
-          // Written by ApiService into AppState.detectedFaces
+          // ── 2. OBJECT DETECTION AR BOXES (RED) ───────────────────────────
+          if (_cameraReady)
+            Positioned.fill(
+              child: ValueListenableBuilder<List<DetectedObject>>(
+                valueListenable: AppState.detectedObjects,
+                builder: (context, objects, _) {
+                  if (objects.isEmpty) return const SizedBox();
+                  return CustomPaint(
+                    painter: _ObjectBoxPainter(
+                      objects: objects,
+                      videoWidth: _videoWidth,
+                      videoHeight: _videoHeight,
+                    ),
+                  );
+                },
+              ),
+            ),
+
+          // ── 3. FACE RECOGNITION AR BOXES (GREEN/RED) ─────────────────────
           if (_cameraReady)
             Positioned.fill(
               child: ValueListenableBuilder<List<DetectedFace>>(
@@ -206,9 +217,7 @@ class _VisionPageState extends State<VisionPage> {
               ),
             ),
 
-          // ── 3. ALERT BANNER ───────────────────────────────────────────────
-          // Same AppState.alertStatus notifier that HomePage listens to,
-          // so the alert fires on BOTH screens simultaneously.
+          // ── 4. ALERT BANNER ───────────────────────────────────────────────
           ValueListenableBuilder<AlertType>(
             valueListenable: AppState.alertStatus,
             builder: (context, alert, _) {
@@ -260,7 +269,7 @@ class _VisionPageState extends State<VisionPage> {
             },
           ),
 
-          // ── 4. CLOSE BUTTON ───────────────────────────────────────────────
+          // ── 5. CLOSE BUTTON ───────────────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -285,16 +294,21 @@ class _VisionPageState extends State<VisionPage> {
             ),
           ),
 
-          // ── 5. AI STATUS BADGE ────────────────────────────────────────────
+          // ── 6. AI STATUS BADGE ────────────────────────────────────────────
           Positioned(
             bottom: 32,
             right: 24,
-            child: ValueListenableBuilder<List<DetectedFace>>(
-              valueListenable: AppState.detectedFaces,
-              builder: (context, faces, _) => _AiStatusBadge(
-                isReady: _cameraReady,
-                faceCount: faces.length,
-              ),
+            child: ValueListenableBuilder<List<DetectedObject>>(
+              valueListenable: AppState.detectedObjects,
+              builder: (context, objects, _) =>
+                  ValueListenableBuilder<List<DetectedFace>>(
+                    valueListenable: AppState.detectedFaces,
+                    builder: (context, faces, _) => _AiStatusBadge(
+                      isReady: _cameraReady,
+                      objectCount: objects.length,
+                      faceCount: faces.length,
+                    ),
+                  ),
             ),
           ),
         ],
@@ -304,11 +318,122 @@ class _VisionPageState extends State<VisionPage> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _FaceBoxPainter
-//
-//  Draws green (known) or red (unknown) AR boxes + name labels.
-//  Coordinates from Django are normalised 0.0–1.0 relative to video size.
-//  The painter maps them to the actual screen size of the view.
+//  _ObjectBoxPainter — RED boxes for dangerous objects
+// ─────────────────────────────────────────────────────────────────────────────
+class _ObjectBoxPainter extends CustomPainter {
+  final List<DetectedObject> objects;
+  final double videoWidth;
+  final double videoHeight;
+
+  const _ObjectBoxPainter({
+    required this.objects,
+    required this.videoWidth,
+    required this.videoHeight,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double videoAspect = videoWidth / videoHeight;
+    final double screenAspect = size.width / size.height;
+
+    double scale, offsetX = 0, offsetY = 0;
+    if (videoAspect > screenAspect) {
+      scale = size.height / videoHeight;
+      offsetX = (size.width - videoWidth * scale) / 2;
+    } else {
+      scale = size.width / videoWidth;
+      offsetY = (size.height - videoHeight * scale) / 2;
+    }
+
+    const color = Color(0xFFFF1744);
+
+    for (final obj in objects) {
+      final double x1 = (1.0 - obj.right) * videoWidth * scale + offsetX;
+      final double y1 = obj.top * videoHeight * scale + offsetY;
+      final double x2 = (1.0 - obj.left) * videoWidth * scale + offsetX;
+      final double y2 = obj.bottom * videoHeight * scale + offsetY;
+      final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
+
+      // Glow
+      canvas.drawRect(
+        box,
+        Paint()
+          ..color = color.withOpacity(0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 10
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
+      );
+
+      // Box
+      canvas.drawRect(
+        box,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+
+      _drawCorners(canvas, box, color);
+
+      final label =
+          '${obj.label.toUpperCase()} ${(obj.confidence * 100).toStringAsFixed(0)}%';
+      _drawLabel(canvas, label, color, Offset(x1, y1 - 24));
+    }
+  }
+
+  void _drawCorners(Canvas canvas, Rect box, Color color) {
+    final p = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.5
+      ..strokeCap = StrokeCap.square;
+    const double L = 16.0;
+    canvas.drawLine(box.topLeft, box.topLeft + const Offset(L, 0), p);
+    canvas.drawLine(box.topLeft, box.topLeft + const Offset(0, L), p);
+    canvas.drawLine(box.topRight, box.topRight + const Offset(-L, 0), p);
+    canvas.drawLine(box.topRight, box.topRight + const Offset(0, L), p);
+    canvas.drawLine(box.bottomLeft, box.bottomLeft + const Offset(L, 0), p);
+    canvas.drawLine(box.bottomLeft, box.bottomLeft + const Offset(0, -L), p);
+    canvas.drawLine(box.bottomRight, box.bottomRight + const Offset(-L, 0), p);
+    canvas.drawLine(box.bottomRight, box.bottomRight + const Offset(0, -L), p);
+  }
+
+  void _drawLabel(Canvas canvas, String text, Color color, Offset pos) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+          shadows: const [
+            Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(pos.dx - 4, pos.dy - 2, tp.width + 8, tp.height + 4),
+        const Radius.circular(4),
+      ),
+      Paint()..color = Colors.black.withOpacity(0.6),
+    );
+    tp.paint(canvas, pos);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ObjectBoxPainter old) =>
+      old.objects != objects ||
+      old.videoWidth != videoWidth ||
+      old.videoHeight != videoHeight;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _FaceBoxPainter — GREEN for known faces, RED for unknown faces
 // ─────────────────────────────────────────────────────────────────────────────
 class _FaceBoxPainter extends CustomPainter {
   final List<DetectedFace> faces;
@@ -323,29 +448,24 @@ class _FaceBoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // The video is rendered with objectFit:cover so we need to match that
-    // scaling: find how the video fills the screen (cover = crop to fill).
     final double videoAspect = videoWidth / videoHeight;
     final double screenAspect = size.width / size.height;
 
     double scale, offsetX = 0, offsetY = 0;
     if (videoAspect > screenAspect) {
-      // Video is wider — scale to fill height, crop sides
       scale = size.height / videoHeight;
       offsetX = (size.width - videoWidth * scale) / 2;
     } else {
-      // Video is taller — scale to fill width, crop top/bottom
       scale = size.width / videoWidth;
       offsetY = (size.height - videoHeight * scale) / 2;
     }
 
     for (final face in faces) {
+      // Green for known, red for unknown
       final color = face.isKnown
-          ? const Color(0xFF00E676) // bright green
-          : const Color(0xFFFF1744); // bright red
+          ? const Color(0xFF00E676)
+          : const Color(0xFFFF1744);
 
-      // Map normalised coords → screen pixels
-      // X coordinates are mirrored because the video has scaleX(-1) applied
       final double x1 = (1.0 - face.right) * videoWidth * scale + offsetX;
       final double y1 = face.top * videoHeight * scale + offsetY;
       final double x2 = (1.0 - face.left) * videoWidth * scale + offsetX;
@@ -362,7 +482,7 @@ class _FaceBoxPainter extends CustomPainter {
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
       );
 
-      // Box outline
+      // Box
       canvas.drawRect(
         box,
         Paint()
@@ -371,10 +491,8 @@ class _FaceBoxPainter extends CustomPainter {
           ..strokeWidth = 2.5,
       );
 
-      // Corner accents for AR look
       _drawCorners(canvas, box, color);
 
-      // Name label below box
       final label = face.isKnown
           ? (face.name ?? 'Known').toUpperCase()
           : 'UNKNOWN';
@@ -438,18 +556,34 @@ class _FaceBoxPainter extends CustomPainter {
 // ─────────────────────────────────────────────────────────────────────────────
 class _AiStatusBadge extends StatelessWidget {
   final bool isReady;
+  final int objectCount;
   final int faceCount;
-  const _AiStatusBadge({required this.isReady, required this.faceCount});
+
+  const _AiStatusBadge({
+    required this.isReady,
+    required this.objectCount,
+    required this.faceCount,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final active = faceCount > 0;
-    final label = !isReady
-        ? 'STARTING CAMERA…'
-        : active
-        ? '$faceCount FACE${faceCount > 1 ? 'S' : ''} DETECTED'
-        : 'AI SCANNING';
-    final color = active ? const Color(0xFF00E676) : Colors.white38;
+    final hasDetection = objectCount > 0 || faceCount > 0;
+    String label;
+    Color color;
+
+    if (!isReady) {
+      label = 'STARTING CAMERA…';
+      color = Colors.white38;
+    } else if (objectCount > 0) {
+      label = '$objectCount OBJECT${objectCount > 1 ? 'S' : ''} DETECTED';
+      color = const Color(0xFFFF1744);
+    } else if (faceCount > 0) {
+      label = '$faceCount FACE${faceCount > 1 ? 'S' : ''} DETECTED';
+      color = const Color(0xFF00E676);
+    } else {
+      label = 'AI SCANNING';
+      color = Colors.white38;
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
