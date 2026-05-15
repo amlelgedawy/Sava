@@ -5,9 +5,10 @@ __pycache__/
 
 # Virtual environment
 venv/
+venv310/
+venv313/
 env/
 .env
-
 # YOLO model weight (download from Ultralytics)
 yolov8n.pt
 
