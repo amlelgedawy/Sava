@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:typed_data';
-import 'dart:js_util' as js_util;
-import 'dart:ui_web' as ui_web;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import '../app_state.dart';
+import '../main.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 
@@ -29,18 +26,13 @@ class VisionPage extends StatefulWidget {
 }
 
 class _VisionPageState extends State<VisionPage> {
-  // ── Web camera elements ────────────────────────────────────────────────────
-  html.VideoElement? _video;
-  html.MediaStream? _stream;
-  String _viewId = '';
+  CameraController? _controller;
   bool _cameraReady = false;
 
-  // ── Frame loop ─────────────────────────────────────────────────────────────
   Timer? _frameTimer;
   bool _isSending = false;
   static const Duration _frameInterval = Duration(seconds: 2);
 
-  // ── Actual video dimensions ────────────────────────────────────────────────
   double _videoWidth = 1.0;
   double _videoHeight = 1.0;
 
@@ -51,42 +43,20 @@ class _VisionPageState extends State<VisionPage> {
   }
 
   Future<void> _startCamera() async {
+    if (cameras.isEmpty) return;
     try {
-      _viewId = 'vision-camera-${DateTime.now().millisecondsSinceEpoch}';
-
-      _video = html.VideoElement()
-        ..autoplay = true
-        ..muted = true
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.transform = 'scaleX(-1)';
-
-      // ignore: undefined_prefixed_name
-      ui_web.platformViewRegistry.registerViewFactory(
-        _viewId,
-        (int id) => _video!,
+      _controller = CameraController(
+        cameras.first,
+        ResolutionPreset.medium,
+        enableAudio: false,
       );
-
-      final mediaDevices = html.window.navigator.mediaDevices;
-      if (mediaDevices == null) throw Exception('Camera not supported');
-
-      _stream = await js_util.promiseToFuture<html.MediaStream>(
-        js_util.callMethod(mediaDevices, 'getUserMedia', [
-          js_util.jsify({'video': true, 'audio': false}),
-        ]),
-      );
-
-      _video!.srcObject = _stream;
-
-      _video!.onLoadedMetadata.listen((_) {
-        _videoWidth = _video!.videoWidth.toDouble();
-        _videoHeight = _video!.videoHeight.toDouble();
-        if (!mounted) return;
-        setState(() => _cameraReady = true);
-        _startFrameLoop();
-      });
-    } catch (e) {
+      await _controller!.initialize();
+      if (!mounted) return;
+      _videoWidth = _controller!.value.previewSize?.width ?? 640;
+      _videoHeight = _controller!.value.previewSize?.height ?? 480;
+      setState(() => _cameraReady = true);
+      _startFrameLoop();
+    } catch (_) {
       if (mounted) setState(() => _cameraReady = false);
     }
   }
@@ -97,52 +67,13 @@ class _VisionPageState extends State<VisionPage> {
   }
 
   Future<void> _captureAndSend() async {
-    if (_isSending || _video == null || !_cameraReady) return;
-    if (_videoWidth <= 1 || _videoHeight <= 1) return;
-
+    if (_isSending || _controller == null || !_cameraReady) return;
     _isSending = true;
     try {
-      // Draw current video frame to an off-screen canvas
-      final canvas = html.CanvasElement(
-        width: _videoWidth.toInt(),
-        height: _videoHeight.toInt(),
-      );
-      final ctx = canvas.context2D;
-      ctx.drawImage(_video!, 0, 0);
-
-      // Export as JPEG blob
-      final completer = Completer<html.Blob>();
-      js_util.callMethod(canvas, 'toBlob', [
-        js_util.allowInterop((html.Blob? blob) {
-          if (blob != null) {
-            completer.complete(blob);
-          } else {
-            completer.completeError('toBlob returned null');
-          }
-        }),
-        'image/jpeg',
-        0.85,
-      ]);
-
-      final blob = await completer.future;
-
-      // Convert Blob → Uint8List
-      final reader = html.FileReader();
-      final readerCompleter = Completer<Uint8List>();
-      reader.onLoadEnd.listen((_) {
-        final result = reader.result;
-        if (result is Uint8List) {
-          readerCompleter.complete(result);
-        } else {
-          readerCompleter.completeError('FileReader result was not Uint8List');
-        }
-      });
-      reader.readAsArrayBuffer(blob);
-      final bytes = await readerCompleter.future;
-
-      // Send to BOTH servers simultaneously — don't await, run in parallel
-      ApiService.detectObjects(bytes); // Port 5001 — object detection
-      ApiService.analyzeFace(bytes); // Port 5000 — face recognition
+      final file = await _controller!.takePicture();
+      final bytes = await file.readAsBytes();
+      ApiService.detectObjects(bytes);
+      ApiService.analyzeFace(bytes);
     } catch (_) {
       AppState.detectedObjects.value = [];
       AppState.detectedFaces.value = [];
@@ -153,9 +84,7 @@ class _VisionPageState extends State<VisionPage> {
 
   void _stopCamera() {
     _frameTimer?.cancel();
-    _stream?.getTracks().forEach((t) => t.stop());
-    _stream = null;
-    _video?.srcObject = null;
+    _controller?.dispose();
     AppState.detectedObjects.value = [];
     AppState.detectedFaces.value = [];
   }
@@ -174,8 +103,8 @@ class _VisionPageState extends State<VisionPage> {
         children: [
           // ── 1. FULL SCREEN CAMERA FEED ────────────────────────────────────
           Positioned.fill(
-            child: _cameraReady
-                ? HtmlElementView(viewType: _viewId)
+            child: _cameraReady && _controller != null
+                ? CameraPreview(_controller!)
                 : const Center(
                     child: CircularProgressIndicator(color: Colors.white),
                   ),
@@ -302,13 +231,13 @@ class _VisionPageState extends State<VisionPage> {
               valueListenable: AppState.detectedObjects,
               builder: (context, objects, _) =>
                   ValueListenableBuilder<List<DetectedFace>>(
-                    valueListenable: AppState.detectedFaces,
-                    builder: (context, faces, _) => _AiStatusBadge(
-                      isReady: _cameraReady,
-                      objectCount: objects.length,
-                      faceCount: faces.length,
-                    ),
-                  ),
+                valueListenable: AppState.detectedFaces,
+                builder: (context, faces, _) => _AiStatusBadge(
+                  isReady: _cameraReady,
+                  objectCount: objects.length,
+                  faceCount: faces.length,
+                ),
+              ),
             ),
           ),
         ],
@@ -462,9 +391,8 @@ class _FaceBoxPainter extends CustomPainter {
 
     for (final face in faces) {
       // Green for known, red for unknown
-      final color = face.isKnown
-          ? const Color(0xFF00E676)
-          : const Color(0xFFFF1744);
+      final color =
+          face.isKnown ? const Color(0xFF00E676) : const Color(0xFFFF1744);
 
       final double x1 = (1.0 - face.right) * videoWidth * scale + offsetX;
       final double y1 = face.top * videoHeight * scale + offsetY;
@@ -493,9 +421,8 @@ class _FaceBoxPainter extends CustomPainter {
 
       _drawCorners(canvas, box, color);
 
-      final label = face.isKnown
-          ? (face.name ?? 'Known').toUpperCase()
-          : 'UNKNOWN';
+      final label =
+          face.isKnown ? (face.name ?? 'Known').toUpperCase() : 'UNKNOWN';
       _drawLabel(canvas, label, color, Offset(x1, y2 + 6));
     }
   }
@@ -551,9 +478,8 @@ class _FaceBoxPainter extends CustomPainter {
       old.videoHeight != videoHeight;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 //  _AiStatusBadge
-// ─────────────────────────────────────────────────────────────────────────────
+
 class _AiStatusBadge extends StatelessWidget {
   final bool isReady;
   final int objectCount;

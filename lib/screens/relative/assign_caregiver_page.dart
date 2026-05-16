@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
-import '../../models/user_models.dart';
-import '../../services/mock_service.dart';
+import '../../services/api_service.dart';
 
 class AssignCaregiverPage extends StatefulWidget {
   const AssignCaregiverPage({super.key});
@@ -12,9 +11,9 @@ class AssignCaregiverPage extends StatefulWidget {
 }
 
 class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
-  Patient? _patient;
-  CaregiverUser? _currentCaregiver;
-  List<CaregiverUser> _available = [];
+  Map<String, dynamic>? _currentCaregiver;
+  List<Map<String, dynamic>> _available = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -22,36 +21,45 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
     _load();
   }
 
-  void _load() {
-    final user = AppState.currentUser.value;
-    if (user is! RelativeUser || user.patientId == null) return;
-    final patient = MockService.instance.getPatient(user.patientId!);
-    if (patient == null) return;
-    CaregiverUser? cg;
-    if (patient.assignedCaregiverId != null) {
-      cg = MockService.instance.getCaregiverById(patient.assignedCaregiverId!);
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final caregivers = await ApiService.getAvailableCaregivers();
+      if (mounted) {
+        setState(() {
+          _available = caregivers.cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
     }
-    setState(() {
-      _patient = patient;
-      _currentCaregiver = cg;
-      _available = MockService.instance.getAvailableCaregivers();
-    });
   }
 
-  bool get _isPrimary {
-    final user = AppState.currentUser.value;
-    return user is RelativeUser && user.relativeType == RelativeType.primary;
-  }
+  bool get _isPrimary => true;
 
-  void _assign(String caregiverId) {
-    if (_patient == null) return;
-    final ok = MockService.instance
-        .assignCaregiverToPatient(_patient!.id, caregiverId);
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Caregiver assigned successfully')),
+  Future<void> _assign(String caregiverId) async {
+    final patientId = AppState.patientId.value;
+    final requesterId = AppState.userId.value;
+    if (patientId == null || requesterId == null) return;
+    try {
+      await ApiService.sendCaregiverOffer(
+        patientId: patientId,
+        requesterId: requesterId,
+        caregiverId: caregiverId,
       );
-      _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Offer sent to caregiver')),
+        );
+        _load();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     }
   }
 
@@ -63,21 +71,18 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
         title: const Text('End Contract',
             style: TextStyle(fontWeight: FontWeight.bold)),
         content: Text(
-          'Are you sure you want to end the contract with ${_currentCaregiver?.name}?',
+          'Are you sure you want to end the contract with ${_currentCaregiver?['name']}?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: SovaColors.sage)),
+            child:
+                const Text('Cancel', style: TextStyle(color: SovaColors.sage)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              if (_patient != null) {
-                MockService.instance.removeCaregiverFromPatient(_patient!.id);
-                _load();
-              }
+              _load();
             },
             child: const Text('End Contract',
                 style: TextStyle(color: SovaColors.danger)),
@@ -100,24 +105,25 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
               Text('RELATIVE', style: SovaTheme.textTheme.labelMedium),
               const SizedBox(height: 8),
               Text('Caregiver', style: SovaTheme.textTheme.displayMedium),
-              if (_patient != null)
-                Text('Patient: ${_patient!.name}',
+              if (AppState.patientName.value.isNotEmpty)
+                Text('Patient: ${AppState.patientName.value}',
                     style: TextStyle(color: SovaColors.sage, fontSize: 14)),
               const SizedBox(height: 32),
 
               // ── Current Caregiver ──────────────────────────────────────
-              if (_currentCaregiver != null) ...[
+              if (_loading) const Center(child: CircularProgressIndicator()),
+              if (!_loading && _currentCaregiver != null) ...[
                 _sectionLabel('Current Caregiver'),
                 const SizedBox(height: 12),
                 _CurrentCaregiverCard(
-                  caregiver: _currentCaregiver!,
+                  caregiverName: _currentCaregiver!['name'] as String? ?? '',
                   isPrimary: _isPrimary,
                   onEndContract: _showEndContractDialog,
                 ).animate().fadeIn(),
               ],
 
               // ── Available Caregivers ───────────────────────────────────
-              if (_currentCaregiver == null) ...[
+              if (!_loading && _currentCaregiver == null) ...[
                 _sectionLabel('Available Caregivers'),
                 const SizedBox(height: 4),
                 Text(
@@ -138,11 +144,8 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
                     itemBuilder: (_, i) => _CaregiverCard(
                       caregiver: _available[i],
                       canAssign: _isPrimary,
-                      onAssign: () => _assign(_available[i].id),
-                    )
-                        .animate()
-                        .fadeIn(delay: (i * 80).ms)
-                        .slideY(begin: 0.1),
+                      onAssign: () => _assign(_available[i]['id'].toString()),
+                    ).animate().fadeIn(delay: (i * 80).ms).slideY(begin: 0.1),
                   ),
               ],
             ],
@@ -171,11 +174,11 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
 }
 
 class _CurrentCaregiverCard extends StatelessWidget {
-  final CaregiverUser caregiver;
+  final String caregiverName;
   final bool isPrimary;
   final VoidCallback onEndContract;
   const _CurrentCaregiverCard(
-      {required this.caregiver,
+      {required this.caregiverName,
       required this.isPrimary,
       required this.onEndContract});
 
@@ -198,20 +201,19 @@ class _CurrentCaregiverCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child:
-                  const Icon(Icons.person, color: Colors.white, size: 28),
+              child: const Icon(Icons.person, color: Colors.white, size: 28),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(caregiver.name,
+                  Text(caregiverName,
                       style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 17)),
-                  Text('${caregiver.yearsExperience} yrs experience',
+                  Text('Active Caregiver',
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.7),
                           fontSize: 13)),
@@ -219,8 +221,7 @@ class _CurrentCaregiverCard extends StatelessWidget {
               ),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: SovaColors.success.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(20),
@@ -234,9 +235,6 @@ class _CurrentCaregiverCard extends StatelessWidget {
           ]),
           const SizedBox(height: 16),
           Row(children: [
-            _infoChip(
-                Icons.attach_money, 'EGP ${caregiver.salary.toStringAsFixed(0)}/mo'),
-            const SizedBox(width: 10),
             _infoChip(Icons.verified_outlined, 'Verified'),
           ]),
           if (isPrimary) ...[
@@ -249,14 +247,13 @@ class _CurrentCaregiverCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.3)),
                 ),
                 child: const Center(
                   child: Text('End Contract',
                       style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold)),
+                          color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ),
             ),
@@ -267,8 +264,7 @@ class _CurrentCaregiverCard extends StatelessWidget {
   }
 
   Widget _infoChip(IconData icon, String label) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(20),
@@ -286,7 +282,7 @@ class _CurrentCaregiverCard extends StatelessWidget {
 }
 
 class _CaregiverCard extends StatelessWidget {
-  final CaregiverUser caregiver;
+  final Map<String, dynamic> caregiver;
   final bool canAssign;
   final VoidCallback onAssign;
   const _CaregiverCard(
@@ -312,20 +308,16 @@ class _CaregiverCard extends StatelessWidget {
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(caregiver.name,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(caregiver['name'] as String? ?? '',
                 style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
                     color: SovaColors.charcoal)),
             const SizedBox(height: 4),
             Text(
-              '${caregiver.yearsExperience} yrs exp  •  EGP ${caregiver.salary.toStringAsFixed(0)}/mo',
-              style:
-                  const TextStyle(color: SovaColors.sage, fontSize: 12),
-            ),
-            Text(
-              '${caregiver.assignedPatientIds.length}/4 patients',
+              caregiver['email'] as String? ?? '',
               style: const TextStyle(color: SovaColors.sage, fontSize: 12),
             ),
           ]),
@@ -334,8 +326,7 @@ class _CaregiverCard extends StatelessWidget {
           GestureDetector(
             onTap: onAssign,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                   color: SovaColors.navy,
                   borderRadius: BorderRadius.circular(20)),

@@ -2,51 +2,327 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../app_state.dart';
 import 'database_service.dart';
 
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
-
 class ApiService {
-  // Object detection server (our YOLO server)
-  static const String _objectDetectionUrl = "http://127.0.0.1:5001";
+  static const String _baseUrl = "http://10.0.2.2:8000/api";
 
-  // Face recognition server (friend's AI server)
-  static const String _faceAiUrl = "http://127.0.0.1:5000";
+  // Object detection server
+  static const String _objectDetectionUrl = "http://10.0.2.2:5002";
 
-  // ==========================================================
+  // Face recognition server
+  static const String _faceAiUrl = "http://10.0.2.2:5000";
+
+  // AUTH
+
+  /// POST /api/auth/login  → returns full user map or throws
+  static Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'email': email, 'password': password}),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 200) return data;
+    throw data['detail'] ?? 'Login failed (${resp.statusCode})';
+  }
+
+  /// POST /api/auth/signup/caregiver  (multipart – CV coming soon)
+  static Future<Map<String, dynamic>> signupCaregiver({
+    required String name,
+    required String username,
+    required String email,
+    required String password,
+    required String confirmPassword,
+    required int age,
+    required String nationalId,
+  }) async {
+    final req = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/auth/signup/caregiver'),
+    );
+    req.fields['name'] = name;
+    req.fields['username'] = username;
+    req.fields['email'] = email;
+    req.fields['password'] = password;
+    req.fields['confirm_password'] = confirmPassword;
+    req.fields['age'] = age.toString();
+    req.fields['national_id'] = nationalId;
+
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 201) return data;
+    throw data['detail'] ?? 'Signup failed (${resp.statusCode})';
+  }
+
+  /// POST /api/auth/signup/relative
+  static Future<Map<String, dynamic>> signupRelative({
+    required String name,
+    required String username,
+    required String email,
+    required String password,
+    required String confirmPassword,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/auth/signup/relative'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'name': name,
+        'username': username,
+        'email': email,
+        'password': password,
+        'confirm_password': confirmPassword,
+      }),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 201) return data;
+    throw data['detail'] ?? 'Signup failed (${resp.statusCode})';
+  }
+
+  // PATIENTS
+
+  /// GET /api/patients?relative_id=<id>
+  static Future<List<dynamic>> getPatientsForRelative(String relativeId) async {
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/patients?relative_id=$relativeId'),
+    );
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch patients';
+  }
+
+  /// GET /api/caregivers/<caregiver_id>/patients
+  static Future<List<dynamic>> getPatientsForCaregiver(
+      String caregiverId) async {
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/caregivers/$caregiverId/patients'),
+    );
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch patients';
+  }
+
+  /// POST /api/patients  body: {relative_id, name, date_of_birth, gender}
+  static Future<Map<String, dynamic>> createPatient({
+    required String relativeId,
+    required String name,
+    String? dateOfBirth,
+    String? gender,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/patients'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'relative_id': relativeId,
+        'name': name,
+        if (dateOfBirth != null) 'date_of_birth': dateOfBirth,
+        if (gender != null) 'gender': gender,
+      }),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 201) return data;
+    throw data['detail'] ?? 'Failed to create patient';
+  }
+
+  // CAREGIVERS
+
+  /// GET /api/caregivers/available
+  static Future<List<dynamic>> getAvailableCaregivers() async {
+    final resp = await http.get(Uri.parse('$_baseUrl/caregivers/available'));
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch caregivers';
+  }
+
+  /// POST /api/patients/<patient_id>/caregiver-offer  body: {requester_id, caregiver_id}
+  static Future<Map<String, dynamic>> sendCaregiverOffer({
+    required String patientId,
+    required String requesterId,
+    required String caregiverId,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/patients/$patientId/caregiver-offer'),
+      headers: {'Content-Type': 'application/json'},
+      body: json
+          .encode({'requester_id': requesterId, 'caregiver_id': caregiverId}),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 201) return data;
+    throw data['detail'] ?? 'Failed to send offer';
+  }
+
+  // RELATIVES
+
+  /// GET /api/patients/<patient_id>/relatives
+  static Future<List<dynamic>> getRelativesForPatient(String patientId) async {
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/patients/$patientId/relatives'),
+    );
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch relatives';
+  }
+
+  /// POST /api/patients/<patient_id>/relatives  body: {requester_id, username, role_type}
+  static Future<void> addRelative({
+    required String patientId,
+    required String requesterId,
+    required String username,
+    required String roleType,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/patients/$patientId/relatives'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'requester_id': requesterId,
+        'username': username,
+        'role_type': roleType,
+      }),
+    );
+    if (resp.statusCode == 201) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Failed to add relative';
+  }
+
+  /// DELETE /api/patients/<patient_id>/relatives?requester_id=...&username=...
+  static Future<void> removeRelative({
+    required String patientId,
+    required String requesterId,
+    required String username,
+  }) async {
+    final resp = await http.delete(
+      Uri.parse(
+          '$_baseUrl/patients/$patientId/relatives?requester_id=$requesterId&username=$username'),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to remove relative';
+  }
+
+  // ALERTS
+
+  /// GET /api/alerts?recipient_id=<id>&status=NEW
+  static Future<List<dynamic>> getAlerts({
+    required String recipientId,
+    String? statusFilter,
+  }) async {
+    var url = '$_baseUrl/alerts?recipient_id=$recipientId';
+    if (statusFilter != null) url += '&status=$statusFilter';
+    final resp = await http.get(Uri.parse(url));
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    return [];
+  }
+
+  /// PATCH /api/alerts/<alert_id>  body: {status: "SEEN"}
+  static Future<void> acknowledgeAlert(String alertId) async {
+    await http.patch(
+      Uri.parse('$_baseUrl/alerts/$alertId'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'status': 'SEEN'}),
+    );
+  }
+
+  // MEDICATION
+
+  /// GET /api/patients/<patient_id>/medication
+  static Future<Map<String, dynamic>?> getMedicationSchedule(
+      String patientId) async {
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/patients/$patientId/medication'),
+    );
+    if (resp.statusCode == 200)
+      return json.decode(resp.body) as Map<String, dynamic>;
+    return null;
+  }
+
+  // ACTIVITY HISTORY
+
+  /// GET /api/activity-recognition/history?patient_id=...&minutes=...
+  static Future<List<dynamic>> getActivityHistory({
+    required String patientId,
+    int minutes = 1440,
+  }) async {
+    final resp = await http.get(
+      Uri.parse(
+          '$_baseUrl/activity-recognition/history?patient_id=$patientId&minutes=$minutes'),
+    );
+    if (resp.statusCode == 200) {
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+      return data['events'] as List? ?? [];
+    }
+    return [];
+  }
+
+  // ADMIN
+
+  /// GET /api/admin/users?role=CAREGIVER|RELATIVE|ADMIN
+  static Future<List<dynamic>> adminListUsers({String? role}) async {
+    var url = '$_baseUrl/admin/users';
+    if (role != null) url += '?role=$role';
+    final resp = await http.get(Uri.parse(url));
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Failed to fetch users';
+  }
+
+  /// GET /api/admin/caregivers  (all caregivers including unverified)
+  static Future<List<dynamic>> adminListCaregivers() async {
+    final resp = await http.get(Uri.parse('$_baseUrl/admin/caregivers'));
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch caregivers';
+  }
+
+  /// PATCH /api/admin/caregivers/<caregiver_id>/salary  body: {admin_id, salary_per_hour}
+  static Future<void> adminSetSalary({
+    required String adminId,
+    required String caregiverId,
+    required double salaryPerHour,
+  }) async {
+    final resp = await http.patch(
+      Uri.parse('$_baseUrl/admin/caregivers/$caregiverId/salary'),
+      headers: {'Content-Type': 'application/json'},
+      body:
+          json.encode({'admin_id': adminId, 'salary_per_hour': salaryPerHour}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Set salary failed';
+  }
+
+  /// DELETE /api/admin/users/<user_id>  body: {admin_id}
+  static Future<void> adminDeleteUser({
+    required String adminId,
+    required String userId,
+  }) async {
+    final req =
+        http.Request('DELETE', Uri.parse('$_baseUrl/admin/users/$userId'));
+    req.headers['Content-Type'] = 'application/json';
+    req.body = json.encode({'admin_id': adminId});
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Delete failed';
+  }
+
   // OBJECT DETECTION — POST /detect to port 5001
-  // ==========================================================
+
   static Future<void> detectObjects(Uint8List frameBytes) async {
     try {
-      final formData = html.FormData();
-      final blob = html.Blob([frameBytes], 'image/jpeg');
-      formData.appendBlob('frame', blob, 'frame.jpg');
-
-      final xhr = html.HttpRequest();
-      final completer = Completer<void>();
-
-      xhr.open('POST', '$_objectDetectionUrl/detect');
-      xhr.onLoad.listen((_) {
-        if (xhr.status == 200) {
-          try {
-            _handleDetectionResponse(xhr.responseText ?? '{}');
-          } catch (_) {
-            AppState.detectedObjects.value = [];
-          }
-        } else {
-          AppState.detectedObjects.value = [];
-        }
-        completer.complete();
-      });
-      xhr.onError.listen((_) {
+      final req = http.MultipartRequest(
+          'POST', Uri.parse('$_objectDetectionUrl/detect'));
+      req.files.add(http.MultipartFile.fromBytes('frame', frameBytes,
+          filename: 'frame.jpg'));
+      final streamed = await req.send();
+      final resp = await http.Response.fromStream(streamed);
+      if (resp.statusCode == 200) {
+        _handleDetectionResponse(resp.body);
+      } else {
         AppState.detectedObjects.value = [];
-        completer.complete();
-      });
-
-      xhr.send(formData);
-      await completer.future;
+      }
     } catch (_) {
       AppState.detectedObjects.value = [];
     }
@@ -96,41 +372,23 @@ class ApiService {
     }
   }
 
-  // ==========================================================
   // FACE RECOGNITION — POST /analyze-face to port 5000
-  // ==========================================================
+
   static Future<void> analyzeFace(Uint8List frameBytes) async {
     try {
       final patientId = AppState.patientId.value ?? '1';
-
-      final formData = html.FormData();
-      final blob = html.Blob([frameBytes], 'image/jpeg');
-      formData.appendBlob('frame', blob, 'frame.jpg');
-      formData.append('patient_id', patientId);
-
-      final xhr = html.HttpRequest();
-      final completer = Completer<void>();
-
-      xhr.open('POST', '$_faceAiUrl/analyze-face');
-      xhr.onLoad.listen((_) {
-        if (xhr.status == 200) {
-          try {
-            _handleFaceResponse(xhr.responseText ?? '{}');
-          } catch (_) {
-            AppState.detectedFaces.value = [];
-          }
-        } else {
-          AppState.detectedFaces.value = [];
-        }
-        completer.complete();
-      });
-      xhr.onError.listen((_) {
+      final req =
+          http.MultipartRequest('POST', Uri.parse('$_faceAiUrl/analyze-face'));
+      req.files.add(http.MultipartFile.fromBytes('frame', frameBytes,
+          filename: 'frame.jpg'));
+      req.fields['patient_id'] = patientId;
+      final streamed = await req.send();
+      final resp = await http.Response.fromStream(streamed);
+      if (resp.statusCode == 200) {
+        _handleFaceResponse(resp.body);
+      } else {
         AppState.detectedFaces.value = [];
-        completer.complete();
-      });
-
-      xhr.send(formData);
-      await completer.future;
+      }
     } catch (_) {
       AppState.detectedFaces.value = [];
     }
@@ -156,9 +414,8 @@ class ApiService {
       name: name,
       isKnown: isKnown,
       top: location != null ? (location['top'] as num? ?? 0.2).toDouble() : 0.2,
-      left: location != null
-          ? (location['left'] as num? ?? 0.3).toDouble()
-          : 0.3,
+      left:
+          location != null ? (location['left'] as num? ?? 0.3).toDouble() : 0.3,
       bottom: location != null
           ? (location['bottom'] as num? ?? 0.8).toDouble()
           : 0.8,
@@ -180,9 +437,8 @@ class ApiService {
     }
   }
 
-  // ==========================================================
   // SIMULATION HELPERS
-  // ==========================================================
+
   static void simulateHeartRate(int bpm) {
     AppState.heartRate.value = bpm;
     if (bpm == 0 || bpm > 120) {

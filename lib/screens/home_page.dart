@@ -13,7 +13,6 @@ import 'activity_timeline_page.dart';
 import 'alerts_page.dart';
 import 'auth/landing_page.dart';
 import 'caregiver/medicine_schedule_page.dart';
-import '../services/mock_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -26,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     DatabaseService.refreshDashboard();
+    DatabaseService.fetchActivityHistory();
   }
 
   void _showLogoutDialog() {
@@ -34,18 +34,23 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Logout',
-            style: TextStyle(fontWeight: FontWeight.bold, color: SovaColors.charcoal)),
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: SovaColors.charcoal)),
         content: const Text('Are you sure you want to logout?',
             style: TextStyle(color: Colors.black54)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.black38)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.black38)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              MockService.instance.logout();
+              DatabaseService.stopAlertPolling();
+              AppState.userId.value = null;
+              AppState.caregiverId.value = null;
+              AppState.patientId.value = null;
               AppState.currentUser.value = null;
               AppState.userRole.value = null;
               AppState.caregiverName.value = 'User';
@@ -57,7 +62,67 @@ class _HomePageState extends State<HomePage> {
               );
             },
             child: const Text('Logout',
-                style: TextStyle(color: SovaColors.danger, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: SovaColors.danger, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCreatePatientDialog() {
+    final nameController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Create Patient',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: SovaColors.charcoal)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Patient Name',
+                hintText: 'Enter patient name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.black38)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final name = nameController.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(context);
+              try {
+                final relativeId = AppState.userId.value;
+                if (relativeId == null) return;
+                final patientData = await ApiService.createPatient(
+                  relativeId: relativeId,
+                  name: name,
+                );
+                AppState.patientId.value = patientData['id'].toString();
+                AppState.patientName.value =
+                    patientData['name'] as String? ?? '';
+                DatabaseService.refreshDashboard();
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to create patient: $e')),
+                );
+              }
+            },
+            child: const Text('Create',
+                style: TextStyle(
+                    color: SovaColors.success, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -103,7 +168,8 @@ class _HomePageState extends State<HomePage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('SAVA', style: SovaTheme.textTheme.labelMedium),
+                              Text('SAVA',
+                                  style: SovaTheme.textTheme.labelMedium),
                               const SizedBox(height: 4),
                               ValueListenableBuilder<String>(
                                 valueListenable: AppState.caregiverName,
@@ -125,8 +191,7 @@ class _HomePageState extends State<HomePage> {
                               color: SovaColors.sage),
                         ),
                         IconButton(
-                          onPressed: () =>
-                              ApiService.processAiDetection(alert),
+                          onPressed: () => ApiService.processAiDetection(alert),
                           icon: const Icon(Icons.science_rounded,
                               color: SovaColors.sage),
                         ),
@@ -206,7 +271,8 @@ class _HomePageState extends State<HomePage> {
                           isEmergency
                               ? Icons.warning_amber_rounded
                               : Icons.shield_moon_outlined,
-                          color: isEmergency ? Colors.white : SovaColors.success,
+                          color:
+                              isEmergency ? Colors.white : SovaColors.success,
                           size: 28,
                         ).animate(target: isEmergency ? 1 : 0).shake(),
                         const SizedBox(width: 16),
@@ -223,7 +289,8 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                         Icon(Icons.chevron_right,
-                            color: isEmergency ? Colors.white54 : SovaColors.sage,
+                            color:
+                                isEmergency ? Colors.white54 : SovaColors.sage,
                             size: 18),
                       ]),
                     ),
@@ -239,8 +306,7 @@ class _HomePageState extends State<HomePage> {
                       final color = hasLog
                           ? DatabaseService.getActivityColor(log.title)
                           : SovaColors.sensorNeutral;
-                      final icon =
-                          log?.icon ?? Icons.hourglass_empty_rounded;
+                      final icon = log?.icon ?? Icons.hourglass_empty_rounded;
                       final title = log?.title ?? 'No Activity Yet';
                       final time = hasLog
                           ? (log.isFinished
@@ -265,8 +331,7 @@ class _HomePageState extends State<HomePage> {
                                 color: Colors.white.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(18),
                               ),
-                              child:
-                                  Icon(icon, color: Colors.white, size: 28),
+                              child: Icon(icon, color: Colors.white, size: 28),
                             ),
                             const SizedBox(width: 16),
                             Expanded(
@@ -289,8 +354,7 @@ class _HomePageState extends State<HomePage> {
                                   const SizedBox(height: 2),
                                   Text(time,
                                       style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 12)),
+                                          color: Colors.white70, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -322,8 +386,7 @@ class _HomePageState extends State<HomePage> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) =>
-                                      const MedicineSchedulePage()),
+                                  builder: (_) => const MedicineSchedulePage()),
                             ),
                             color: const Color(0xFFE83E8C),
                             height: 130,
@@ -332,10 +395,8 @@ class _HomePageState extends State<HomePage> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(
-                                      Icons.medication_liquid_outlined,
-                                      color: Colors.white,
-                                      size: 24),
+                                  const Icon(Icons.medication_liquid_outlined,
+                                      color: Colors.white, size: 24),
                                   const Spacer(),
                                   const Text('NEXT MEDICINE',
                                       style: TextStyle(
@@ -407,14 +468,13 @@ class _HomePageState extends State<HomePage> {
 
                   const SizedBox(height: 16),
 
-                  // ── Camera View + Add Relative ────────────────────────────
+                  // ── Camera View + Add Relative + Create Patient ─────────────────
                   Row(children: [
                     Expanded(
                       child: InteractiveBentoCard(
                         onTap: () => Navigator.push(
                           context,
-                          MaterialPageRoute(
-                              builder: (_) => const VisionPage()),
+                          MaterialPageRoute(builder: (_) => const VisionPage()),
                         ),
                         color: SovaColors.navy,
                         height: 120,
@@ -457,6 +517,31 @@ class _HomePageState extends State<HomePage> {
                                   color: Colors.white, size: 28),
                               SizedBox(height: 8),
                               Text('Add Relative',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: InteractiveBentoCard(
+                        onTap: () => _showCreatePatientDialog(),
+                        color: const Color(0xFF4CAF50),
+                        height: 120,
+                        child: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.person_add_rounded,
+                                  color: Colors.white, size: 28),
+                              SizedBox(height: 8),
+                              Text('Create Patient',
                                   style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,
@@ -526,7 +611,8 @@ class _AlertBell extends StatelessWidget {
 class ECGWaveWidget extends StatefulWidget {
   final int bpm;
   final bool isEmergency;
-  const ECGWaveWidget({super.key, required this.bpm, required this.isEmergency});
+  const ECGWaveWidget(
+      {super.key, required this.bpm, required this.isEmergency});
   @override
   State<ECGWaveWidget> createState() => _ECGWaveWidgetState();
 }
@@ -618,8 +704,7 @@ class ECGLinePainter extends CustomPainter {
 class MonitorGridPainterWidget extends StatelessWidget {
   const MonitorGridPainterWidget({super.key});
   @override
-  Widget build(BuildContext context) =>
-      CustomPaint(painter: _GridPainter());
+  Widget build(BuildContext context) => CustomPaint(painter: _GridPainter());
 }
 
 class _GridPainter extends CustomPainter {

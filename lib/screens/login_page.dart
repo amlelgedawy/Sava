@@ -3,7 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../theme.dart';
 import '../app_state.dart';
 import '../models/user_models.dart';
-import '../services/mock_service.dart';
+import '../services/api_service.dart';
+import '../services/database_service.dart';
 import 'auth/landing_page.dart';
 import 'caregiver/caregiver_wrapper.dart';
 import 'relative/relative_wrapper.dart';
@@ -39,39 +40,60 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
 
-    final user = await MockService.instance.login(email, password);
+    try {
+      final data = await ApiService.login(email: email, password: password);
 
-    if (!mounted) return;
-    setState(() => _loading = false);
+      if (!mounted) return;
 
-    if (user == null) {
-      setState(() => _error = 'Invalid email or password');
+      final id = data['id'].toString();
+      final name = data['name'] as String? ?? '';
+      final role = (data['role'] as String? ?? '').toUpperCase();
+
+      AppState.userId.value = id;
+      AppState.caregiverName.value = name;
+
+      if (role == 'CAREGIVER') {
+        AppState.userRole.value = UserRole.caregiver;
+        AppState.caregiverId.value = id;
+        final patients = await ApiService.getPatientsForCaregiver(id);
+        if (patients.isNotEmpty) {
+          AppState.patientId.value = patients[0]['id'].toString();
+          AppState.patientName.value = patients[0]['name'] as String? ?? '';
+        }
+      } else if (role == 'RELATIVE') {
+        AppState.userRole.value = UserRole.relative;
+        final patients = await ApiService.getPatientsForRelative(id);
+        if (patients.isNotEmpty) {
+          AppState.patientId.value = patients[0]['id'].toString();
+          AppState.patientName.value = patients[0]['name'] as String? ?? '';
+        }
+      } else if (role == 'ADMIN') {
+        AppState.userRole.value = UserRole.admin;
+      }
+
+      DatabaseService.startAlertPollingForUser(id);
+      DatabaseService.refreshDashboard();
+      AppState.isLoggedIn.value = true;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+      setState(() => _loading = false);
       return;
     }
 
-    AppState.currentUser.value = user;
-    AppState.userRole.value = user.role;
-    if (user is CaregiverUser) {
-      AppState.caregiverName.value = user.name;
-      AppState.caregiverId.value = user.id;
-    } else {
-      AppState.caregiverName.value = user.name;
-    }
-    AppState.isLoggedIn.value = true;
+    setState(() => _loading = false);
 
+    final role = AppState.userRole.value;
     Widget dest;
-    switch (user.role) {
-      case UserRole.caregiver:
-        dest = const CaregiverWrapper();
-        break;
-      case UserRole.relative:
-        dest = const RelativeWrapper();
-        break;
-      case UserRole.admin:
-        dest = const AdminWrapper();
-        break;
+    if (role == UserRole.caregiver) {
+      dest = const CaregiverWrapper();
+    } else if (role == UserRole.relative) {
+      dest = const RelativeWrapper();
+    } else {
+      dest = const AdminWrapper();
     }
 
+    if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => dest),
@@ -217,16 +239,14 @@ class _LoginPageState extends State<LoginPage> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(children: [
           Text('$role: ',
-              style: const TextStyle(
-                  color: SovaColors.sage, fontSize: 12)),
+              style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
           Text(email,
               style: const TextStyle(
                   color: SovaColors.charcoal,
                   fontSize: 12,
                   fontWeight: FontWeight.w600)),
           Text(' / $pass',
-              style: const TextStyle(
-                  color: SovaColors.sage, fontSize: 12)),
+              style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
         ]),
       ),
     );

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
-import '../../models/user_models.dart';
-import '../../services/mock_service.dart';
+import '../../app_state.dart';
+import '../../services/api_service.dart';
 
 class UserManagementPage extends StatefulWidget {
   const UserManagementPage({super.key});
@@ -13,7 +13,8 @@ class UserManagementPage extends StatefulWidget {
 class _UserManagementPageState extends State<UserManagementPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabs;
-  List<AppUser> _all = [];
+  List<Map<String, dynamic>> _all = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -28,34 +29,49 @@ class _UserManagementPageState extends State<UserManagementPage>
     super.dispose();
   }
 
-  void _load() {
-    setState(() => _all = MockService.instance.getAllUsers().toList());
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final list = await ApiService.adminListUsers();
+      if (mounted)
+        setState(() {
+          _all = list.cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  List<CaregiverUser> get _caregivers =>
-      _all.whereType<CaregiverUser>().toList();
-  List<RelativeUser> get _relatives =>
-      _all.whereType<RelativeUser>().toList();
+  List<Map<String, dynamic>> get _caregivers => _all
+      .where((u) => (u['role'] as String? ?? '').toUpperCase() == 'CAREGIVER')
+      .toList();
+  List<Map<String, dynamic>> get _relatives => _all
+      .where((u) => (u['role'] as String? ?? '').toUpperCase() == 'RELATIVE')
+      .toList();
 
-  void _confirmDelete(AppUser user) {
+  void _confirmDelete(Map<String, dynamic> user) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Delete User',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text('Delete ${user.name}? This cannot be undone.'),
+        content: Text('Delete ${user['name']}? This cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: SovaColors.sage)),
+            child:
+                const Text('Cancel', style: TextStyle(color: SovaColors.sage)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              MockService.instance.deleteUser(user.id);
+              final adminId = AppState.userId.value ?? '';
+              try {
+                await ApiService.adminDeleteUser(
+                    adminId: adminId, userId: user['id'].toString());
+              } catch (_) {}
               _load();
             },
             child: const Text('Delete',
@@ -66,13 +82,13 @@ class _UserManagementPageState extends State<UserManagementPage>
     );
   }
 
-  void _changeRelativeType(RelativeUser rel) {
-    final newType = rel.relativeType == RelativeType.primary
-        ? RelativeType.secondary
-        : RelativeType.primary;
-    MockService.instance.changeRelativeType(rel.id, newType);
-    _load();
-  }
+  // void _changeRelativeType(RelativeUser rel) {
+  //   final newType = rel.relativeType == RelativeType.primary
+  //       ? RelativeType.secondary
+  //       : RelativeType.primary;
+  //   MockService.instance.changeRelativeType(rel.id, newType);
+  //   _load();
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -89,9 +105,8 @@ class _UserManagementPageState extends State<UserManagementPage>
                 children: [
                   Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
                   Text('Users', style: SovaTheme.textTheme.displayMedium),
-                  Text('${_all.length} registered users',
-                      style: TextStyle(
-                          color: SovaColors.sage, fontSize: 14)),
+                  Text('${_loading ? '...' : _all.length} registered users',
+                      style: TextStyle(color: SovaColors.sage, fontSize: 14)),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -110,14 +125,16 @@ class _UserManagementPageState extends State<UserManagementPage>
               ],
             ),
             Expanded(
-              child: TabBarView(
-                controller: _tabs,
-                children: [
-                  _userList(_all),
-                  _userList(_caregivers),
-                  _userList(_relatives),
-                ],
-              ),
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : TabBarView(
+                      controller: _tabs,
+                      children: [
+                        _userList(_all),
+                        _userList(_caregivers),
+                        _userList(_relatives),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -125,7 +142,7 @@ class _UserManagementPageState extends State<UserManagementPage>
     );
   }
 
-  Widget _userList(List<AppUser> users) {
+  Widget _userList(List<Map<String, dynamic>> users) {
     if (users.isEmpty) {
       return Center(
         child: Text('No users in this category',
@@ -141,9 +158,6 @@ class _UserManagementPageState extends State<UserManagementPage>
         return _UserCard(
           user: u,
           onDelete: () => _confirmDelete(u),
-          onChangeType: u is RelativeUser
-              ? () => _changeRelativeType(u)
-              : null,
         ).animate().fadeIn(delay: (i * 60).ms).slideY(begin: 0.08);
       },
     );
@@ -151,38 +165,22 @@ class _UserManagementPageState extends State<UserManagementPage>
 }
 
 class _UserCard extends StatelessWidget {
-  final AppUser user;
+  final Map<String, dynamic> user;
   final VoidCallback onDelete;
-  final VoidCallback? onChangeType;
-  const _UserCard(
-      {required this.user,
-      required this.onDelete,
-      this.onChangeType});
+  const _UserCard({required this.user, required this.onDelete});
 
   Color get _roleColor {
-    switch (user.role) {
-      case UserRole.caregiver:
-        return SovaColors.navy;
-      case UserRole.relative:
-        return SovaColors.coral;
-      case UserRole.admin:
-        return SovaColors.charcoal;
-    }
+    final role = (user['role'] as String? ?? '').toUpperCase();
+    if (role == 'CAREGIVER') return SovaColors.navy;
+    if (role == 'RELATIVE') return SovaColors.coral;
+    return SovaColors.charcoal;
   }
 
   String get _roleLabel {
-    switch (user.role) {
-      case UserRole.caregiver:
-        final cg = user as CaregiverUser;
-        return cg.cvVerified ? 'Caregiver ✓' : 'Caregiver (pending)';
-      case UserRole.relative:
-        final rel = user as RelativeUser;
-        return rel.relativeType == RelativeType.primary
-            ? 'Primary Relative'
-            : 'Secondary Relative';
-      case UserRole.admin:
-        return 'Admin';
-    }
+    final role = (user['role'] as String? ?? '').toUpperCase();
+    if (role == 'CAREGIVER') return 'Caregiver';
+    if (role == 'RELATIVE') return 'Relative';
+    return 'Admin';
   }
 
   @override
@@ -196,58 +194,43 @@ class _UserCard extends StatelessWidget {
           width: 44,
           height: 44,
           decoration: BoxDecoration(
-              color: _roleColor.withValues(alpha: 0.1),
-              shape: BoxShape.circle),
+              color: _roleColor.withValues(alpha: 0.1), shape: BoxShape.circle),
           child: Icon(Icons.person, color: _roleColor, size: 22),
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.name,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: SovaColors.charcoal)),
-                Text(user.email,
-                    style: const TextStyle(
-                        color: SovaColors.sage, fontSize: 12)),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                      color: _roleColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Text(_roleLabel,
-                      style: TextStyle(
-                          color: _roleColor,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold)),
-                ),
-              ]),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(user['name'] as String? ?? '',
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: SovaColors.charcoal)),
+            Text(user['email'] as String? ?? '',
+                style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                  color: _roleColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text(_roleLabel,
+                  style: TextStyle(
+                      color: _roleColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ]),
         ),
-        if (user.role != UserRole.admin)
+        if ((user['role'] as String? ?? '').toUpperCase() != 'ADMIN')
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert,
-                color: SovaColors.sage, size: 20),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            icon: const Icon(Icons.more_vert, color: SovaColors.sage, size: 20),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (v) {
               if (v == 'delete') onDelete();
-              if (v == 'type') onChangeType?.call();
             },
             itemBuilder: (_) => [
-              if (onChangeType != null)
-                const PopupMenuItem(
-                  value: 'type',
-                  child: Row(children: [
-                    Icon(Icons.swap_horiz, size: 18, color: SovaColors.navy),
-                    SizedBox(width: 8),
-                    Text('Change Type'),
-                  ]),
-                ),
               const PopupMenuItem(
                 value: 'delete',
                 child: Row(children: [

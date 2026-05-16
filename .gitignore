@@ -23,8 +23,7 @@ perception/activity_recognition/data/keypoints_v2/
 .vscode/
 .idea/
 
-# Claude
-.claude/
+.dart_tool/
 
 # OS
 .DS_Store
@@ -35,3 +34,4 @@ node_modules/
 .env
 
 uploads/
+build/

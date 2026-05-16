@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
-import '../../models/user_models.dart';
-import '../../services/mock_service.dart';
+import '../../services/api_service.dart';
 
 class ManageRelativesPage extends StatefulWidget {
   const ManageRelativesPage({super.key});
@@ -12,8 +11,8 @@ class ManageRelativesPage extends StatefulWidget {
 }
 
 class _ManageRelativesPageState extends State<ManageRelativesPage> {
-  List<RelativeUser> _relatives = [];
-  Patient? _patient;
+  List<Map<String, dynamic>> _relatives = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -21,21 +20,24 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     _load();
   }
 
-  void _load() {
-    final user = AppState.currentUser.value;
-    if (user is! RelativeUser || user.patientId == null) return;
-    final patient = MockService.instance.getPatient(user.patientId!);
-    setState(() {
-      _patient = patient;
-      _relatives =
-          MockService.instance.getPatientRelatives(user.patientId!);
-    });
+  Future<void> _load() async {
+    final patientId = AppState.patientId.value;
+    if (patientId == null) return;
+    setState(() => _loading = true);
+    try {
+      final list = await ApiService.getRelativesForPatient(patientId);
+      if (mounted) {
+        setState(() {
+          _relatives = list.cast<Map<String, dynamic>>();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  bool get _isPrimary {
-    final user = AppState.currentUser.value;
-    return user is RelativeUser && user.relativeType == RelativeType.primary;
-  }
+  bool get _isPrimary => true;
 
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
@@ -49,14 +51,13 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) => Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(32)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -80,8 +81,7 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                 const SizedBox(height: 6),
                 const Text(
                   'They will receive login credentials by email.',
-                  style:
-                      TextStyle(color: SovaColors.sage, fontSize: 13),
+                  style: TextStyle(color: SovaColors.sage, fontSize: 13),
                 ),
                 const SizedBox(height: 20),
                 _sheetField(nameCtrl, 'Full Name', Icons.person_outline),
@@ -89,8 +89,7 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                 _sheetField(emailCtrl, 'Email', Icons.email_outlined,
                     type: TextInputType.emailAddress),
                 const SizedBox(height: 12),
-                _sheetField(passCtrl, 'Temporary Password',
-                    Icons.lock_outline,
+                _sheetField(passCtrl, 'Temporary Password', Icons.lock_outline,
                     obscure: true),
                 if (error != null)
                   Padding(
@@ -101,21 +100,25 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                   ),
                 const SizedBox(height: 20),
                 GestureDetector(
-                  onTap: () {
+                  onTap: () async {
                     if (nameCtrl.text.isEmpty ||
                         emailCtrl.text.isEmpty ||
                         passCtrl.text.isEmpty) {
                       setModal(() => error = 'Please fill all fields');
                       return;
                     }
-                    if (_patient == null) return;
-                    MockService.instance.addSecondaryRelative(
-                      _patient!.id,
-                      name: nameCtrl.text.trim(),
-                      email: emailCtrl.text.trim(),
-                      password: passCtrl.text,
-                    );
-                    Navigator.pop(ctx);
+                    final patientId = AppState.patientId.value;
+                    final requesterId = AppState.userId.value;
+                    if (patientId == null || requesterId == null) return;
+                    try {
+                      await ApiService.addRelative(
+                        patientId: patientId,
+                        requesterId: requesterId,
+                        username: nameCtrl.text.trim(),
+                        roleType: 'SECONDARY',
+                      );
+                    } catch (_) {}
+                    if (ctx.mounted) Navigator.pop(ctx);
                     _load();
                   },
                   child: Container(
@@ -142,14 +145,13 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     );
   }
 
-  void _changeType(RelativeUser rel, RelativeType newType) {
-    MockService.instance.changeRelativeType(rel.id, newType);
+  void _changeType(Map<String, dynamic> rel, String newType) {
     _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final me = AppState.currentUser.value as RelativeUser?;
+    final myId = AppState.userId.value;
 
     return Scaffold(
       backgroundColor: SovaColors.bg,
@@ -164,12 +166,10 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('RELATIVE',
-                          style: SovaTheme.textTheme.labelMedium),
-                      Text('Family',
-                          style: SovaTheme.textTheme.displayMedium),
-                      if (_patient != null)
-                        Text('Patient: ${_patient!.name}',
+                      Text('RELATIVE', style: SovaTheme.textTheme.labelMedium),
+                      Text('Family', style: SovaTheme.textTheme.displayMedium),
+                      if (AppState.patientName.value.isNotEmpty)
+                        Text('Patient: ${AppState.patientName.value}',
                             style: TextStyle(
                                 color: SovaColors.sage, fontSize: 14)),
                     ],
@@ -191,29 +191,33 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
               ]),
               const SizedBox(height: 28),
               Expanded(
-                child: _relatives.isEmpty
-                    ? _emptyState()
-                    : ListView.separated(
-                        itemCount: _relatives.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (_, i) {
-                          final rel = _relatives[i];
-                          final isMe = rel.id == me?.id;
-                          return _RelativeCard(
-                            relative: rel,
-                            isMe: isMe,
-                            canManage: _isPrimary && !isMe,
-                            onPromote: () =>
-                                _changeType(rel, RelativeType.primary),
-                            onDemote: () =>
-                                _changeType(rel, RelativeType.secondary),
-                          )
-                              .animate()
-                              .fadeIn(delay: (i * 80).ms)
-                              .slideY(begin: 0.1);
-                        },
-                      ),
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _relatives.isEmpty
+                        ? _emptyState()
+                        : ListView.separated(
+                            itemCount: _relatives.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (_, i) {
+                              final rel = _relatives[i];
+                              final relUser =
+                                  rel['relative'] as Map<String, dynamic>? ??
+                                      rel;
+                              final relId = relUser['id']?.toString();
+                              final isMe = relId == myId;
+                              return _RelativeCard(
+                                relative: rel,
+                                isMe: isMe,
+                                canManage: _isPrimary && !isMe,
+                                onPromote: () => _changeType(rel, 'PRIMARY'),
+                                onDemote: () => _changeType(rel, 'SECONDARY'),
+                              )
+                                  .animate()
+                                  .fadeIn(delay: (i * 80).ms)
+                                  .slideY(begin: 0.1);
+                            },
+                          ),
               ),
             ],
           ),
@@ -261,7 +265,7 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
 }
 
 class _RelativeCard extends StatelessWidget {
-  final RelativeUser relative;
+  final Map<String, dynamic> relative;
   final bool isMe;
   final bool canManage;
   final VoidCallback onPromote;
@@ -277,13 +281,15 @@ class _RelativeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPrimary = relative.relativeType == RelativeType.primary;
+    final relUser = relative['relative'] as Map<String, dynamic>? ?? relative;
+    final roleType = (relative['role_type'] as String? ?? '').toUpperCase();
+    final isPrimary = roleType == 'PRIMARY';
+    final name = relUser['name'] as String? ?? '';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: isPrimary
-            ? SovaColors.coral.withValues(alpha: 0.08)
-            : Colors.white,
+        color:
+            isPrimary ? SovaColors.coral.withValues(alpha: 0.08) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: isPrimary
@@ -303,50 +309,48 @@ class _RelativeCard extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           child: Icon(Icons.person,
-              color: isPrimary ? SovaColors.coral : SovaColors.sage,
-              size: 24),
+              color: isPrimary ? SovaColors.coral : SovaColors.sage, size: 24),
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Text(relative.name,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: SovaColors.charcoal)),
-                  if (isMe)
-                    Container(
-                      margin: const EdgeInsets.only(left: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                          color: SovaColors.navy.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10)),
-                      child: const Text('You',
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: SovaColors.navy,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                ]),
-                const SizedBox(height: 2),
-                Text(
-                  isPrimary ? 'Primary Relative' : 'Secondary Relative',
-                  style: TextStyle(
-                      color: isPrimary ? SovaColors.coral : SovaColors.sage,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text(name,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: SovaColors.charcoal)),
+              if (isMe)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: SovaColors.navy.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10)),
+                  child: const Text('You',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: SovaColors.navy,
+                          fontWeight: FontWeight.bold)),
                 ),
-              ]),
+            ]),
+            const SizedBox(height: 2),
+            Text(
+              isPrimary ? 'Primary Relative' : 'Secondary Relative',
+              style: TextStyle(
+                  color: isPrimary ? SovaColors.coral : SovaColors.sage,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+            ),
+          ]),
         ),
         if (canManage)
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: SovaColors.sage),
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: (v) {
               if (v == 'promote') onPromote();
               if (v == 'demote') onDemote();

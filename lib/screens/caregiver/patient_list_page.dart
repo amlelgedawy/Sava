@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
-import '../../models/user_models.dart';
-import '../../services/mock_service.dart';
+import '../../services/api_service.dart';
 
 class PatientListPage extends StatefulWidget {
   const PatientListPage({super.key});
@@ -12,7 +11,7 @@ class PatientListPage extends StatefulWidget {
 }
 
 class _PatientListPageState extends State<PatientListPage> {
-  List<Patient> _patients = [];
+  List<Map<String, dynamic>> _patients = [];
 
   @override
   void initState() {
@@ -20,11 +19,14 @@ class _PatientListPageState extends State<PatientListPage> {
     _load();
   }
 
-  void _load() {
+  Future<void> _load() async {
     final id = AppState.caregiverId.value;
-    if (id != null) {
-      setState(() => _patients = MockService.instance.getCaregiverPatients(id));
-    }
+    if (id == null) return;
+    try {
+      final list = await ApiService.getPatientsForCaregiver(id);
+      if (mounted)
+        setState(() => _patients = list.cast<Map<String, dynamic>>());
+    } catch (_) {}
   }
 
   @override
@@ -55,7 +57,7 @@ class _PatientListPageState extends State<PatientListPage> {
                             _PatientCard(patient: _patients[i])
                                 .animate()
                                 .fadeIn(delay: (i * 80).ms)
-                                .slideY(begin: 0.1),
+                                .slideY(begin: 0.08),
                       ),
               ),
             ],
@@ -70,8 +72,7 @@ class _PatientListPageState extends State<PatientListPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline,
-              size: 64, color: SovaColors.sensorNeutral),
+          Icon(Icons.people_outline, size: 64, color: SovaColors.sensorNeutral),
           const SizedBox(height: 16),
           Text('No patients assigned yet',
               style: TextStyle(
@@ -89,7 +90,7 @@ class _PatientListPageState extends State<PatientListPage> {
 }
 
 class _PatientCard extends StatelessWidget {
-  final Patient patient;
+  final Map<String, dynamic> patient;
   const _PatientCard({required this.patient});
 
   @override
@@ -129,7 +130,7 @@ class _PatientCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(patient.name,
+                    Text(patient['name'] as String? ?? '',
                         style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -168,8 +169,9 @@ class _PatientCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   GestureDetector(
                     onTap: () {
-                      AppState.patientId.value = patient.id;
-                      AppState.patientName.value = patient.name;
+                      AppState.patientId.value = patient['id'].toString();
+                      AppState.patientName.value =
+                          patient['name'] as String? ?? '';
                       AppState.currentNavIndex.value = 0;
                     },
                     child: Container(

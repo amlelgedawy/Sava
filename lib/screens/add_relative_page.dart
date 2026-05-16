@@ -1,14 +1,11 @@
 import 'dart:async';
-import 'dart:typed_data';
+
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:http/http.dart' as http;
+import '../main.dart';
 import '../theme.dart';
-
-// Web-specific imports
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
-import 'dart:js_util' as js_util;
-import 'dart:ui_web' as ui_web;
 
 class AddRelativePage extends StatefulWidget {
   const AddRelativePage({super.key});
@@ -32,15 +29,9 @@ class _AddRelativePageState extends State<AddRelativePage>
   late AnimationController _pulseController;
   late AnimationController _circleController;
 
-  // Web camera
-  html.VideoElement? _videoElement;
-  html.MediaStream? _stream;
-  html.MediaRecorder? _recorder;
-  final List<html.Blob> _chunks = [];
-  String _viewId = "";
+  CameraController? _controller;
   bool _cameraReady = false;
-
-  static const String _aiUrl = "http://localhost:5000";
+  String _aiUrl = "http://10.0.2.2:5000";
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
   @override
@@ -66,36 +57,22 @@ class _AddRelativePageState extends State<AddRelativePage>
     super.dispose();
   }
 
-  // ── Camera helpers ─────────────────────────────────────────────────────
   Future<void> _startCamera() async {
+    if (cameras.isEmpty) {
+      setState(() {
+        _step = _Step.error;
+        _errorMessage = "No camera available";
+      });
+      return;
+    }
     try {
-      _viewId = 'camera-preview-${DateTime.now().millisecondsSinceEpoch}';
-
-      _videoElement = html.VideoElement()
-        ..autoplay = true
-        ..muted = true
-        ..style.width = '100%'
-        ..style.height = '100%'
-        ..style.objectFit = 'cover'
-        ..style.borderRadius = '50%';
-
-      // ignore: undefined_prefixed_name
-      ui_web.platformViewRegistry.registerViewFactory(
-        _viewId,
-        (int id) => _videoElement!,
+      _controller = CameraController(
+        cameras.first,
+        ResolutionPreset.medium,
+        enableAudio: false,
       );
-
-      final mediaDevices = html.window.navigator.mediaDevices;
-      if (mediaDevices == null) throw Exception("Camera not available");
-
-      _stream = await js_util.promiseToFuture<html.MediaStream>(
-        js_util.callMethod(mediaDevices, 'getUserMedia', [
-          js_util.jsify({'video': true, 'audio': false}),
-        ]),
-      );
-
-      _videoElement!.srcObject = _stream;
-
+      await _controller!.initialize();
+      if (!mounted) return;
       setState(() => _cameraReady = true);
     } catch (e) {
       setState(() {
@@ -106,88 +83,72 @@ class _AddRelativePageState extends State<AddRelativePage>
   }
 
   void _stopCamera() {
-    _stream?.getTracks().forEach((t) => t.stop());
-    _stream = null;
-    _videoElement?.srcObject = null;
+    _controller?.dispose();
+    _controller = null;
   }
 
-  // ── Recording ──────────────────────────────────────────────────────────
-  void _startRecording() {
-    if (_stream == null) return;
-    _chunks.clear();
-
-    _recorder = html.MediaRecorder(_stream!, {'mimeType': 'video/webm'});
-    _recorder!.addEventListener('dataavailable', (event) {
-      final blob = js_util.getProperty(event, 'data') as html.Blob;
-      if (blob.size > 0) _chunks.add(blob);
-    });
-
-    _recorder!.start(1000); // collect every 1s
-
-    setState(() {
-      _step = _Step.recording;
-      _secondsLeft = 13;
-    });
-
-    _circleController.forward(from: 0);
-
-    _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      setState(() => _secondsLeft--);
-      if (_secondsLeft <= 0) {
-        t.cancel();
-        _finishRecording();
-      }
-    });
+  Future<void> _startRecording() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    try {
+      await _controller!.startVideoRecording();
+      setState(() {
+        _step = _Step.recording;
+        _secondsLeft = 13;
+      });
+      _circleController.forward(from: 0);
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        setState(() => _secondsLeft--);
+        if (_secondsLeft <= 0) {
+          t.cancel();
+          _finishRecording();
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _step = _Step.error;
+        _errorMessage = "Could not start recording: $e";
+      });
+    }
   }
 
   Future<void> _finishRecording() async {
-    _recorder?.stop();
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    setState(() {
-      _step = _Step.uploading;
-      _statusMessage = "Analysing your face…";
-    });
-
-    await _uploadVideo();
+    try {
+      await _controller!.stopVideoRecording();
+      await Future.delayed(const Duration(milliseconds: 600));
+      setState(() {
+        _step = _Step.uploading;
+        _statusMessage = "Analysing your face…";
+      });
+      await _uploadVideo();
+    } catch (e) {
+      setState(() {
+        _step = _Step.error;
+        _errorMessage = "Recording error: $e";
+      });
+    }
   }
 
-  // ── Upload ─────────────────────────────────────────────────────────────
   Future<void> _uploadVideo() async {
     try {
-      final blob = html.Blob(_chunks, 'video/webm');
+      final video = await _controller!.stopVideoRecording();
+      final bytes = await video.readAsBytes();
       final name = _nameController.text.trim().toLowerCase();
 
-      final formData = html.FormData();
-      formData.appendBlob('video', blob, 'recording.webm');
-      formData.append('person_name', name);
-
-      final xhr = html.HttpRequest();
-      final completer = Completer<void>();
-
-      xhr.open('POST', '$_aiUrl/enroll-relative');
-      xhr.onLoad.listen((_) {
-        if (xhr.status == 200) {
-          setState(() => _step = _Step.done);
-        } else {
-          setState(() {
-            _step = _Step.error;
-            _errorMessage = "Server error ${xhr.status}: ${xhr.responseText}";
-          });
-        }
-        completer.complete();
-      });
-      xhr.onError.listen((_) {
+      final req =
+          http.MultipartRequest('POST', Uri.parse('$_aiUrl/enroll-relative'));
+      req.files.add(http.MultipartFile.fromBytes('video', bytes,
+          filename: 'recording.mp4'));
+      req.fields['person_name'] = name;
+      final streamed = await req.send();
+      final resp = await http.Response.fromStream(streamed);
+      if (resp.statusCode == 200) {
+        setState(() => _step = _Step.done);
+      } else {
         setState(() {
           _step = _Step.error;
-          _errorMessage =
-              "Upload failed. Is the AI server running on port 5000?";
+          _errorMessage = "Server error ${resp.statusCode}: ${resp.body}";
         });
-        completer.complete();
-      });
-
-      xhr.send(formData);
-      await completer.future;
+      }
     } catch (e) {
       setState(() {
         _step = _Step.error;
@@ -470,12 +431,12 @@ class _AddRelativePageState extends State<AddRelativePage>
                     style: TextStyle(color: SovaColors.sage, fontSize: 13),
                   )
                 : _cameraReady
-                ? _bigButton(
-                    label: "Start Recording (13s)",
-                    color: SovaColors.danger,
-                    onTap: _startRecording,
-                  ).animate().fadeIn()
-                : const CircularProgressIndicator(color: SovaColors.sage),
+                    ? _bigButton(
+                        label: "Start Recording (13s)",
+                        color: SovaColors.danger,
+                        onTap: _startRecording,
+                      ).animate().fadeIn()
+                    : const CircularProgressIndicator(color: SovaColors.sage),
           ),
         ],
       ),
@@ -541,7 +502,6 @@ class _AddRelativePageState extends State<AddRelativePage>
             color: SovaColors.navy,
             onTap: () {
               _nameController.clear();
-              _chunks.clear();
               setState(() {
                 _step = _Step.idle;
                 _cameraReady = false;
@@ -590,7 +550,6 @@ class _AddRelativePageState extends State<AddRelativePage>
             label: "Try Again",
             color: SovaColors.charcoal,
             onTap: () {
-              _chunks.clear();
               setState(() {
                 _step = _Step.idle;
                 _cameraReady = false;
@@ -631,15 +590,11 @@ class _AddRelativePageState extends State<AddRelativePage>
                 child: SizedBox(
                   width: 280,
                   height: 280,
-                  child: _cameraReady
-                      ? HtmlElementView(viewType: _viewId)
-                      : Container(
-                          color: SovaColors.charcoal,
-                          child: const Center(
-                            child: CircularProgressIndicator(
-                              color: SovaColors.sage,
-                            ),
-                          ),
+                  child: _cameraReady && _controller != null
+                      ? CameraPreview(_controller!)
+                      : const Center(
+                          child:
+                              CircularProgressIndicator(color: SovaColors.navy),
                         ),
                 ),
               ),

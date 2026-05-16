@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
-import '../../models/user_models.dart';
-import '../../services/mock_service.dart';
+import '../../app_state.dart';
+import '../../services/api_service.dart';
 
 class CvReviewPage extends StatefulWidget {
   const CvReviewPage({super.key});
@@ -11,7 +11,8 @@ class CvReviewPage extends StatefulWidget {
 }
 
 class _CvReviewPageState extends State<CvReviewPage> {
-  List<CaregiverUser> _pending = [];
+  List<Map<String, dynamic>> _pending = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -19,12 +20,25 @@ class _CvReviewPageState extends State<CvReviewPage> {
     _load();
   }
 
-  void _load() {
-    setState(
-        () => _pending = MockService.instance.getPendingCvCaregivers());
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final all = await ApiService.adminListCaregivers();
+      if (mounted)
+        setState(() {
+          _pending = all
+              .cast<Map<String, dynamic>>()
+              .where((c) =>
+                  c['salary_per_hour'] == null || c['salary_per_hour'] == 0)
+              .toList();
+          _loading = false;
+        });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
-  void _showReviewDialog(CaregiverUser cg) {
+  void _showReviewDialog(Map<String, dynamic> cg) {
     final salaryCtrl = TextEditingController();
     final expCtrl = TextEditingController();
     String? error;
@@ -35,14 +49,13 @@ class _CvReviewPageState extends State<CvReviewPage> {
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setModal) => Padding(
-          padding: EdgeInsets.only(
-              bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          padding:
+              EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(32)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -58,18 +71,17 @@ class _CvReviewPageState extends State<CvReviewPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('Verify: ${cg.name}',
+                Text('Verify: ${cg['name']}',
                     style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
                         color: SovaColors.charcoal)),
                 const SizedBox(height: 20),
-                _sheetField(salaryCtrl, 'Monthly Salary (EGP)',
-                    Icons.attach_money,
+                _sheetField(
+                    salaryCtrl, 'Monthly Salary (EGP)', Icons.attach_money,
                     type: TextInputType.number),
                 const SizedBox(height: 12),
-                _sheetField(expCtrl, 'Years of Experience',
-                    Icons.work_outline,
+                _sheetField(expCtrl, 'Years of Experience', Icons.work_outline,
                     type: TextInputType.number),
                 if (error != null)
                   Padding(
@@ -82,27 +94,29 @@ class _CvReviewPageState extends State<CvReviewPage> {
                 Row(children: [
                   Expanded(
                     child: GestureDetector(
-                      onTap: () {
-                        final salary =
-                            double.tryParse(salaryCtrl.text);
+                      onTap: () async {
+                        final salary = double.tryParse(salaryCtrl.text);
                         final exp = int.tryParse(expCtrl.text);
                         if (salary == null || exp == null) {
-                          setModal(() =>
-                              error = 'Please fill both fields');
+                          setModal(() => error = 'Please fill both fields');
                           return;
                         }
-                        MockService.instance.verifyCaregiverCv(
-                          cg.id,
-                          salary: salary,
-                          yearsExperience: exp,
-                        );
-                        Navigator.pop(ctx);
+                        final adminId = AppState.userId.value ?? '';
+                        try {
+                          await ApiService.adminSetSalary(
+                            adminId: adminId,
+                            caregiverId: cg['id'].toString(),
+                            salaryPerHour: salary,
+                          );
+                        } catch (_) {}
+                        if (ctx.mounted) Navigator.pop(ctx);
                         _load();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content: Text(
-                                  '${cg.name} verified successfully')),
-                        );
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text(
+                                    '${cg['name']} verified successfully')),
+                          );
                       },
                       child: Container(
                         height: 56,
@@ -127,8 +141,7 @@ class _CvReviewPageState extends State<CvReviewPage> {
                       decoration: BoxDecoration(
                           color: SovaColors.sensorNeutral,
                           borderRadius: BorderRadius.circular(28)),
-                      child: const Icon(Icons.close,
-                          color: SovaColors.sage),
+                      child: const Icon(Icons.close, color: SovaColors.sage),
                     ),
                   ),
                 ]),
@@ -155,25 +168,27 @@ class _CvReviewPageState extends State<CvReviewPage> {
               const SizedBox(height: 8),
               Text('CV Review', style: SovaTheme.textTheme.displayMedium),
               Text(
-                '${_pending.length} pending verification',
+                '${_loading ? '...' : _pending.length} pending verification',
                 style: TextStyle(color: SovaColors.sage, fontSize: 14),
               ),
               const SizedBox(height: 32),
               Expanded(
-                child: _pending.isEmpty
-                    ? _emptyState()
-                    : ListView.separated(
-                        itemCount: _pending.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (_, i) => _CvCard(
-                          caregiver: _pending[i],
-                          onReview: () => _showReviewDialog(_pending[i]),
-                        )
-                            .animate()
-                            .fadeIn(delay: (i * 80).ms)
-                            .slideY(begin: 0.1),
-                      ),
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _pending.isEmpty
+                        ? _emptyState()
+                        : ListView.separated(
+                            itemCount: _pending.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (_, i) => _CvCard(
+                              caregiver: _pending[i],
+                              onReview: () => _showReviewDialog(_pending[i]),
+                            )
+                                .animate()
+                                .fadeIn(delay: (i * 80).ms)
+                                .slideY(begin: 0.1),
+                          ),
               ),
             ],
           ),
@@ -225,7 +240,7 @@ class _CvReviewPageState extends State<CvReviewPage> {
 }
 
 class _CvCard extends StatelessWidget {
-  final CaregiverUser caregiver;
+  final Map<String, dynamic> caregiver;
   final VoidCallback onReview;
   const _CvCard({required this.caregiver, required this.onReview});
 
@@ -252,19 +267,18 @@ class _CvCard extends StatelessWidget {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(caregiver.name,
+                    Text(caregiver['name'] as String? ?? '',
                         style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                             color: SovaColors.charcoal)),
-                    Text(caregiver.email,
+                    Text(caregiver['email'] as String? ?? '',
                         style: const TextStyle(
                             color: SovaColors.sage, fontSize: 12)),
                   ]),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                   color: SovaColors.danger.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20)),
@@ -276,12 +290,12 @@ class _CvCard extends StatelessWidget {
             ),
           ]),
           const SizedBox(height: 16),
-          _detail('Age', '${caregiver.age} years'),
-          _detail('National ID', caregiver.nationalId),
-          if (caregiver.cvFileName != null)
-            _detail('CV File', caregiver.cvFileName!),
-          if (caregiver.nationalIdPhotoName != null)
-            _detail('ID Photo', caregiver.nationalIdPhotoName!),
+          if (caregiver['age'] != null)
+            _detail('Age', '${caregiver['age']} years'),
+          if (caregiver['national_id'] != null)
+            _detail('National ID', caregiver['national_id'].toString()),
+          if (caregiver['cv_path'] != null)
+            _detail('CV', caregiver['cv_path'].toString()),
           const SizedBox(height: 16),
           GestureDetector(
             onTap: onReview,
@@ -294,8 +308,7 @@ class _CvCard extends StatelessWidget {
               child: const Center(
                 child: Text('Review & Set Salary',
                     style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold)),
+                        color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ),
@@ -308,8 +321,7 @@ class _CvCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(children: [
           Text('$label: ',
-              style: const TextStyle(
-                  color: SovaColors.sage, fontSize: 13)),
+              style: const TextStyle(color: SovaColors.sage, fontSize: 13)),
           Text(value,
               style: const TextStyle(
                   color: SovaColors.charcoal,

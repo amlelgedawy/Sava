@@ -93,6 +93,7 @@ class AppState {
   static final ValueNotifier<List<AlertEntry>> alertHistory = ValueNotifier([]);
 
   // ---- USER SESSION ----
+  static final ValueNotifier<String?> userId = ValueNotifier(null);
   static final ValueNotifier<String?> caregiverId = ValueNotifier(null);
   static final ValueNotifier<String?> patientId = ValueNotifier(null);
   static final ValueNotifier<String> caregiverName = ValueNotifier("Caregiver");

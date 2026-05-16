@@ -2,15 +2,45 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
-import '../../services/mock_service.dart';
+import '../../services/api_service.dart';
 
-class AdminHomePage extends StatelessWidget {
+class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
+  @override
+  State<AdminHomePage> createState() => _AdminHomePageState();
+}
+
+class _AdminHomePageState extends State<AdminHomePage> {
+  int _totalUsers = 0;
+  int _caregiverCount = 0;
+  int _relativeCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final all = await ApiService.adminListUsers();
+      if (!mounted) return;
+      setState(() {
+        _totalUsers = all.length;
+        _caregiverCount = all
+            .where((u) =>
+                (u['role'] as String? ?? '').toUpperCase() == 'CAREGIVER')
+            .length;
+        _relativeCount = all
+            .where(
+                (u) => (u['role'] as String? ?? '').toUpperCase() == 'RELATIVE')
+            .length;
+      });
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
-    final svc = MockService.instance;
-
     return Scaffold(
       backgroundColor: SovaColors.bg,
       body: SafeArea(
@@ -27,81 +57,57 @@ class AdminHomePage extends StatelessWidget {
                 style: TextStyle(color: SovaColors.sage, fontSize: 14),
               ),
               const SizedBox(height: 32),
-
-              // ── Stats Row ──────────────────────────────────────────────
               Row(children: [
                 Expanded(
                   child: _StatCard(
                     icon: Icons.people_outline,
                     label: 'Total Users',
-                    value: '${svc.totalUsersCount}',
+                    value: '$_totalUsers',
                     color: SovaColors.navy,
                   ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _StatCard(
-                    icon: Icons.pending_outlined,
-                    label: 'Pending CVs',
-                    value: '${svc.pendingCvCount}',
+                    icon: Icons.medical_services_outlined,
+                    label: 'Caregivers',
+                    value: '$_caregiverCount',
                     color: SovaColors.coral,
                   ).animate().fadeIn(delay: 180.ms).slideY(begin: 0.1),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _StatCard(
-                    icon: Icons.personal_injury_outlined,
-                    label: 'Patients',
-                    value: '${svc.totalPatientsCount}',
+                    icon: Icons.family_restroom,
+                    label: 'Relatives',
+                    value: '$_relativeCount',
                     color: SovaColors.success,
                   ).animate().fadeIn(delay: 260.ms).slideY(begin: 0.1),
                 ),
               ]),
-
               const SizedBox(height: 32),
-
-              // ── Quick Actions ──────────────────────────────────────────
               Text('Quick Actions',
                   style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: SovaColors.charcoal)),
               const SizedBox(height: 16),
-
-              _ActionTile(
-                icon: Icons.description_outlined,
-                title: 'Review Caregiver CVs',
-                subtitle: '${svc.pendingCvCount} pending review',
-                color: SovaColors.coral,
-                onTap: () {},
-              ).animate().fadeIn(delay: 300.ms),
-
-              const SizedBox(height: 12),
-
               _ActionTile(
                 icon: Icons.manage_accounts_outlined,
                 title: 'Manage Users',
-                subtitle: '${svc.totalUsersCount} registered users',
+                subtitle: '$_totalUsers registered users',
                 color: SovaColors.navy,
                 onTap: () {},
-              ).animate().fadeIn(delay: 380.ms),
-
+              ).animate().fadeIn(delay: 300.ms),
               const SizedBox(height: 32),
-
-              // ── Recent Activity ────────────────────────────────────────
               Text('System Info',
                   style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                       color: SovaColors.charcoal)),
               const SizedBox(height: 16),
-
-              _InfoRow(label: 'Total Caregivers',
-                  value: '${svc.getAllUsers().whereType<dynamic>().where((u) => u.runtimeType.toString().contains("Caregiver")).length}'),
-              _InfoRow(label: 'Verified Caregivers',
-                  value: '${svc.getAllUsers().whereType<dynamic>().where((u) => u.runtimeType.toString().contains("Caregiver")).length - svc.pendingCvCount}'),
-              _InfoRow(label: 'Total Relatives',
-                  value: '${svc.getAllUsers().whereType<dynamic>().where((u) => u.runtimeType.toString().contains("Relative")).length}'),
+              _InfoRow(label: 'Total Caregivers', value: '$_caregiverCount'),
+              _InfoRow(label: 'Total Relatives', value: '$_relativeCount'),
             ],
           ),
         ),
@@ -136,9 +142,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(value,
               style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: color)),
+                  fontSize: 26, fontWeight: FontWeight.bold, color: color)),
           Text(label,
               style: TextStyle(
                   fontSize: 11,
@@ -182,21 +186,18 @@ class _ActionTile extends StatelessWidget {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: SovaColors.charcoal)),
-                  Text(subtitle,
-                      style: const TextStyle(
-                          color: SovaColors.sage, fontSize: 12)),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: SovaColors.charcoal)),
+              Text(subtitle,
+                  style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
+            ]),
           ),
-          const Icon(Icons.arrow_forward_ios,
-              size: 16, color: SovaColors.sage),
+          const Icon(Icons.arrow_forward_ios, size: 16, color: SovaColors.sage),
         ]),
       ),
     );
