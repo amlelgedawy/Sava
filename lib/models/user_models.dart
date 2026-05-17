@@ -41,8 +41,8 @@ class CaregiverUser extends AppUser {
     this.salary = 0.0,
     this.yearsExperience = 0,
     List<String>? assignedPatientIds,
-  }) : assignedPatientIds = assignedPatientIds ?? const [],
-       super(role: UserRole.caregiver);
+  })  : assignedPatientIds = assignedPatientIds ?? const [],
+        super(role: UserRole.caregiver);
 
   CaregiverUser copyWith({
     bool? cvVerified,
@@ -109,7 +109,6 @@ class Patient {
   final String primaryRelativeId;
   final String? assignedCaregiverId;
   final List<String> secondaryRelativeIds;
-  final String? proofOfRelation;
 
   Patient({
     required this.id,
@@ -117,13 +116,11 @@ class Patient {
     required this.primaryRelativeId,
     this.assignedCaregiverId,
     List<String>? secondaryRelativeIds,
-    this.proofOfRelation,
   }) : secondaryRelativeIds = secondaryRelativeIds ?? const [];
 
   Patient copyWith({
     String? assignedCaregiverId,
     List<String>? secondaryRelativeIds,
-    String? proofOfRelation,
     bool clearCaregiver = false,
   }) {
     return Patient(
@@ -134,7 +131,6 @@ class Patient {
           ? null
           : (assignedCaregiverId ?? this.assignedCaregiverId),
       secondaryRelativeIds: secondaryRelativeIds ?? this.secondaryRelativeIds,
-      proofOfRelation: proofOfRelation ?? this.proofOfRelation,
     );
   }
 }

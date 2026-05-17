@@ -82,14 +82,6 @@ class _UserManagementPageState extends State<UserManagementPage>
     );
   }
 
-  // void _changeRelativeType(RelativeUser rel) {
-  //   final newType = rel.relativeType == RelativeType.primary
-  //       ? RelativeType.secondary
-  //       : RelativeType.primary;
-  //   MockService.instance.changeRelativeType(rel.id, newType);
-  //   _load();
-  // }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -103,10 +95,39 @@ class _UserManagementPageState extends State<UserManagementPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
-                  Text('Users', style: SovaTheme.textTheme.displayMedium),
-                  Text('${_loading ? '...' : _all.length} registered users',
-                      style: TextStyle(color: SovaColors.sage, fontSize: 14)),
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: SovaColors.softGlass,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(Icons.arrow_back,
+                              color: SovaColors.charcoal, size: 18),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('ADMIN',
+                                style: SovaTheme.textTheme.labelMedium),
+                            Text('Users',
+                                style: SovaTheme.textTheme.displayMedium),
+                            Text(
+                                '${_loading ? '...' : _all.length} registered users',
+                                style: TextStyle(
+                                    color: SovaColors.sage, fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 20),
                 ],
               ),

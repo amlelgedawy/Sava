@@ -39,12 +39,40 @@ class _PatientListPageState extends State<PatientListPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('CAREGIVER', style: SovaTheme.textTheme.labelMedium),
-              const SizedBox(height: 8),
-              Text('My Patients', style: SovaTheme.textTheme.displayMedium),
-              Text(
-                '${_patients.length}/4 patients assigned',
-                style: TextStyle(color: SovaColors.sage, fontSize: 14),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SovaColors.softGlass,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: SovaColors.charcoal, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('CAREGIVER',
+                            style: SovaTheme.textTheme.labelMedium),
+                        const SizedBox(height: 8),
+                        Text('My Patients',
+                            style: SovaTheme.textTheme.displayMedium),
+                        Text(
+                          '${_patients.length}/4 patients assigned',
+                          style:
+                              TextStyle(color: SovaColors.sage, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 32),
               Expanded(

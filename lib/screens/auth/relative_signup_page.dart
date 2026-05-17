@@ -325,13 +325,30 @@ class _RelativeSignupPageState extends State<RelativeSignupPage> {
             child: SizedBox(
               width: 280,
               height: 280,
-              child: ClipOval(
-                child: _cameraReady && _cameraController != null
-                    ? CameraPreview(_cameraController!)
-                    : const Center(
-                        child:
-                            CircularProgressIndicator(color: SovaColors.coral),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  ClipOval(
+                    child: _cameraReady && _cameraController != null
+                        ? CameraPreview(_cameraController!)
+                        : const Center(
+                            child: CircularProgressIndicator(
+                                color: SovaColors.coral),
+                          ),
+                  ),
+                  if (_myRecording)
+                    Text(
+                      '$_myCountdown',
+                      style: const TextStyle(
+                        fontSize: 64,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(blurRadius: 12, color: Colors.black54)
+                        ],
                       ),
+                    ),
+                ],
               ),
             ),
           ),

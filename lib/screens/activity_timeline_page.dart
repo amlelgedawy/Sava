@@ -41,6 +41,11 @@ class _ActivityTimelinePageState extends State<ActivityTimelinePage> {
                 pinned: true,
                 backgroundColor: SovaColors.bg,
                 elevation: 0,
+                leading: IconButton(
+                  icon:
+                      const Icon(Icons.arrow_back, color: SovaColors.charcoal),
+                  onPressed: () => Navigator.pop(context),
+                ),
                 title: const Text(
                   "Activity Log",
                   style: TextStyle(

@@ -32,7 +32,7 @@ class ApiService {
     throw data['detail'] ?? 'Login failed (${resp.statusCode})';
   }
 
-  /// POST /api/auth/signup/caregiver  (multipart – CV coming soon)
+  /// POST /api/auth/signup/caregiver  (multipart with optional CV)
   static Future<Map<String, dynamic>> signupCaregiver({
     required String name,
     required String username,
@@ -41,6 +41,7 @@ class ApiService {
     required String confirmPassword,
     required int age,
     required String nationalId,
+    String? cvFilePath,
   }) async {
     final req = http.MultipartRequest(
       'POST',
@@ -53,6 +54,10 @@ class ApiService {
     req.fields['confirm_password'] = confirmPassword;
     req.fields['age'] = age.toString();
     req.fields['national_id'] = nationalId;
+
+    if (cvFilePath != null) {
+      req.files.add(await http.MultipartFile.fromPath('cv', cvFilePath));
+    }
 
     final streamed = await req.send();
     final resp = await http.Response.fromStream(streamed);
@@ -108,12 +113,13 @@ class ApiService {
         'Failed to fetch patients';
   }
 
-  /// POST /api/patients  body: {relative_id, name, date_of_birth, gender}
+  /// POST /api/patients  body: {relative_id, name, date_of_birth, gender, current_medication}
   static Future<Map<String, dynamic>> createPatient({
     required String relativeId,
     required String name,
     String? dateOfBirth,
     String? gender,
+    String? currentMedication,
   }) async {
     final resp = await http.post(
       Uri.parse('$_baseUrl/patients'),
@@ -123,6 +129,7 @@ class ApiService {
         'name': name,
         if (dateOfBirth != null) 'date_of_birth': dateOfBirth,
         if (gender != null) 'gender': gender,
+        if (currentMedication != null) 'current_medication': currentMedication,
       }),
     );
     final data = json.decode(resp.body) as Map<String, dynamic>;
@@ -155,6 +162,80 @@ class ApiService {
     final data = json.decode(resp.body) as Map<String, dynamic>;
     if (resp.statusCode == 201) return data;
     throw data['detail'] ?? 'Failed to send offer';
+  }
+
+  // CONTRACTS
+
+  /// GET /api/caregivers/<caregiver_id>/contracts?status=PENDING
+  static Future<List<dynamic>> getCaregiverContracts({
+    required String caregiverId,
+    String? status,
+  }) async {
+    var url = '$_baseUrl/caregivers/$caregiverId/contracts';
+    if (status != null) url += '?status=$status';
+    final resp = await http.get(Uri.parse(url));
+    if (resp.statusCode == 200) return json.decode(resp.body) as List;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch contracts';
+  }
+
+  /// PATCH /api/contracts/<contract_id>/respond  body: {caregiver_id, action: "ACCEPT"}
+  static Future<void> acceptContract({
+    required String contractId,
+    required String caregiverId,
+  }) async {
+    final resp = await http.patch(
+      Uri.parse('$_baseUrl/contracts/$contractId/respond'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'caregiver_id': caregiverId, 'action': 'ACCEPT'}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to accept contract';
+  }
+
+  /// PATCH /api/contracts/<contract_id>/respond  body: {caregiver_id, action: "DECLINE"}
+  static Future<void> declineContract({
+    required String contractId,
+    required String caregiverId,
+  }) async {
+    final resp = await http.patch(
+      Uri.parse('$_baseUrl/contracts/$contractId/respond'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'caregiver_id': caregiverId, 'action': 'DECLINE'}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to decline contract';
+  }
+
+  /// POST /api/contracts/<contract_id>/end  body: {user_id}
+  static Future<void> endContract({
+    required String contractId,
+    required String userId,
+  }) async {
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/contracts/$contractId/end'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'user_id': userId}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Failed to end contract';
+  }
+
+  /// GET /api/patients/<patient_id>/caregiver
+  static Future<Map<String, dynamic>?> getPatientCaregiver(
+      String patientId) async {
+    final resp =
+        await http.get(Uri.parse('$_baseUrl/patients/$patientId/caregiver'));
+    if (resp.statusCode == 200) {
+      final body = resp.body;
+      if (body == 'null' || body.isEmpty) return null;
+      final data = json.decode(body);
+      if (data == null) return null;
+      return data as Map<String, dynamic>;
+    }
+    return null;
   }
 
   // RELATIVES
@@ -306,6 +387,38 @@ class ApiService {
     final resp = await http.Response.fromStream(streamed);
     if (resp.statusCode == 200) return;
     throw (json.decode(resp.body) as Map)['detail'] ?? 'Delete failed';
+  }
+
+  /// DELETE /api/admin/caregivers/<caregiver_id>/reject  body: {admin_id}
+  static Future<void> adminRejectCaregiver({
+    required String adminId,
+    required String caregiverId,
+  }) async {
+    final req = http.Request(
+        'DELETE', Uri.parse('$_baseUrl/admin/caregivers/$caregiverId/reject'));
+    req.headers['Content-Type'] = 'application/json';
+    req.body = json.encode({'admin_id': adminId});
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Reject failed';
+  }
+
+  /// PATCH /api/admin/patients/<patient_id>/relatives/<relative_id>/role  body: {admin_id, role}
+  static Future<void> adminChangeRelativeRole({
+    required String adminId,
+    required String patientId,
+    required String relativeId,
+    required String role,
+  }) async {
+    final resp = await http.patch(
+      Uri.parse(
+          '$_baseUrl/admin/patients/$patientId/relatives/$relativeId/role'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'admin_id': adminId, 'role': role}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Role change failed';
   }
 
   // OBJECT DETECTION — POST /detect to port 5001

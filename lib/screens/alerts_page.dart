@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../app_state.dart';
+import '../services/api_service.dart';
 import '../theme.dart';
 
 class AlertsPage extends StatelessWidget {
@@ -40,7 +41,8 @@ class AlertsPage extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("Alerts", style: SovaTheme.textTheme.displayMedium),
+                        Text("Alerts",
+                            style: SovaTheme.textTheme.displayMedium),
                         const SizedBox(height: 4),
                         const Text(
                           "All alerts from today",
@@ -112,7 +114,13 @@ class AlertsPage extends StatelessWidget {
                         final actualIndex = alerts.length - 1 - index;
                         return _AlertCard(
                           alert: alert,
-                          onAcknowledge: () {
+                          onAcknowledge: () async {
+                            if (alert.backendId != null) {
+                              try {
+                                await ApiService.acknowledgeAlert(
+                                    alert.backendId!);
+                              } catch (_) {}
+                            }
                             final updated = List<AlertEntry>.from(
                               AppState.alertHistory.value,
                             );
@@ -120,8 +128,8 @@ class AlertsPage extends StatelessWidget {
                             AppState.alertHistory.value = updated;
                           },
                         ).animate().fadeIn(
-                          delay: Duration(milliseconds: index * 50),
-                        );
+                              delay: Duration(milliseconds: index * 50),
+                            );
                       },
                     );
                   },

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
-import '../home_page.dart';
+import 'relative_home_page.dart';
 import '../caregiver/medicine_schedule_page.dart';
 import 'assign_caregiver_page.dart';
 import 'manage_relatives_page.dart';
@@ -16,7 +16,7 @@ class _RelativeWrapperState extends State<RelativeWrapper> {
   int _index = 0;
 
   static final List<Widget> _pages = [
-    const HomePage(),
+    const RelativeHomePage(),
     const AssignCaregiverPage(),
     const ManageRelativesPage(),
     const MedicineSchedulePage(),

@@ -3,8 +3,10 @@ from apps.accounts.views.views_patient import PatientListCreateView, PatientDeta
 from apps.accounts.views.views_relative import PatientRelativesView
 from apps.accounts.views.views_caregiver import (
     AvailableCaregiversView, CaregiverOfferView, ContractRespondView,
-    ContractEndView, CaregiverPatientsView, MedicationScheduleView,
+    ContractEndView, CaregiverPatientsView, CaregiverContractsView,
+    PatientCaregiverView, MedicationScheduleView,
 )
 from apps.accounts.views.views_admin import (
     AdminCaregiversView, AdminSetSalaryView, AdminDeleteUserView, AdminUsersListView,
+    AdminRejectCaregiverView, AdminChangeRelativeRoleView,
 )

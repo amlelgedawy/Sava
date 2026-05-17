@@ -12,8 +12,10 @@ class AssignCaregiverPage extends StatefulWidget {
 
 class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
   Map<String, dynamic>? _currentCaregiver;
+  String? _activeContractId;
   List<Map<String, dynamic>> _available = [];
   bool _loading = true;
+  bool _isPrimary = false;
 
   @override
   void initState() {
@@ -24,19 +26,59 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final caregivers = await ApiService.getAvailableCaregivers();
-      if (mounted) {
-        setState(() {
-          _available = caregivers.cast<Map<String, dynamic>>();
-          _loading = false;
-        });
+      final patientId = AppState.patientId.value;
+      final myId = AppState.userId.value;
+
+      // Check if current user is primary relative
+      if (patientId != null && myId != null) {
+        final relatives = await ApiService.getRelativesForPatient(patientId);
+        _isPrimary = false;
+        for (final rel in relatives) {
+          final relUser = rel['relative'] as Map<String, dynamic>? ?? rel;
+          final relId = relUser['id']?.toString();
+          final roleType = (rel['role_type'] as String? ?? '').toUpperCase();
+          if (relId == myId && roleType == 'PRIMARY') {
+            _isPrimary = true;
+            break;
+          }
+        }
+
+        // Load current caregiver for patient
+        final caregiver = await ApiService.getPatientCaregiver(patientId);
+        _currentCaregiver = caregiver;
+
+        // Find active contract ID for end-contract
+        if (caregiver != null) {
+          // We need the contract ID — fetch via caregiver's contracts
+          try {
+            final caregiverId = caregiver['id'].toString();
+            final contracts = await ApiService.getCaregiverContracts(
+              caregiverId: caregiverId,
+              status: 'ACTIVE',
+            );
+            for (final c in contracts) {
+              if ((c['patient_id']?.toString() ??
+                      c['patient']?['id']?.toString()) ==
+                  patientId) {
+                _activeContractId = c['id'].toString();
+                break;
+              }
+            }
+          } catch (_) {}
+        }
       }
+
+      // Only load available caregivers if no current one
+      if (_currentCaregiver == null) {
+        final caregivers = await ApiService.getAvailableCaregivers();
+        _available = caregivers.cast<Map<String, dynamic>>();
+      }
+
+      if (mounted) setState(() => _loading = false);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  bool get _isPrimary => true;
 
   Future<void> _assign(String caregiverId) async {
     final patientId = AppState.patientId.value;
@@ -80,8 +122,27 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
                 const Text('Cancel', style: TextStyle(color: SovaColors.sage)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
+              if (_activeContractId != null) {
+                try {
+                  await ApiService.endContract(
+                    contractId: _activeContractId!,
+                    userId: AppState.userId.value ?? '',
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Contract ended')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(e.toString())),
+                    );
+                  }
+                }
+              }
               _load();
             },
             child: const Text('End Contract',
@@ -102,9 +163,37 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('RELATIVE', style: SovaTheme.textTheme.labelMedium),
-              const SizedBox(height: 8),
-              Text('Caregiver', style: SovaTheme.textTheme.displayMedium),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SovaColors.softGlass,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: SovaColors.charcoal, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('RELATIVE',
+                            style: SovaTheme.textTheme.labelMedium),
+                        const SizedBox(height: 8),
+                        Text('Caregiver',
+                            style: SovaTheme.textTheme.displayMedium),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               if (AppState.patientName.value.isNotEmpty)
                 Text('Patient: ${AppState.patientName.value}',
                     style: TextStyle(color: SovaColors.sage, fontSize: 14)),

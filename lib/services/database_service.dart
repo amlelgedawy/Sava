@@ -13,12 +13,7 @@ class DatabaseService {
   static Timer? _alertPollingTimer;
 
   // --- KEEPING ALL LOCAL DATA FOR YOUR OTHER PAGES ---
-  static final List<Medication> _meds = [
-    Medication(name: "Vitamin D", time: "08:00 AM"),
-    Medication(name: "Donepezil", time: "12:00 PM"),
-    Medication(name: "Quetiapine", time: "09:00 PM"),
-  ];
-
+  static final List<Medication> _meds = [];
   static final List<ActivityLog> _logs = [];
 
   // SIGNUP LOGIC

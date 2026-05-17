@@ -130,6 +130,16 @@ class CaregiverService:
         ).first()
         return contract.caregiver if contract else None
 
+    @staticmethod
+    def get_contracts_for_caregiver(caregiver_id: str, status_filter: str = None) -> List[CaregiverContract]:
+        caregiver = get_user(caregiver_id)
+        if caregiver.role != User.ROLE_CAREGIVER:
+            raise BadRequestError("User is not a CAREGIVER.")
+        q = CaregiverContract.objects(caregiver=caregiver)
+        if status_filter:
+            q = q.filter(status=status_filter.strip().upper())
+        return list(q.order_by("-created_at"))
+
     # Alert recipients
 
     @staticmethod

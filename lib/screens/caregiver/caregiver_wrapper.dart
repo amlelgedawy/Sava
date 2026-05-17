@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
-import '../home_page.dart';
+import 'caregiver_home_page.dart';
 import '../activity_timeline_page.dart';
 import 'patient_list_page.dart';
 import 'medicine_schedule_page.dart';
+import 'contract_management_page.dart';
 
 class CaregiverWrapper extends StatefulWidget {
   const CaregiverWrapper({super.key});
@@ -16,7 +17,8 @@ class _CaregiverWrapperState extends State<CaregiverWrapper> {
   int _index = 0;
 
   static final List<Widget> _pages = [
-    const HomePage(),
+    const CaregiverHomePage(),
+    const ContractManagementPage(),
     const PatientListPage(),
     const ActivityTimelinePage(),
     const MedicineSchedulePage(),
@@ -58,9 +60,10 @@ class _CaregiverWrapperState extends State<CaregiverWrapper> {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _navItem(0, Icons.grid_view_rounded, 'Home'),
-            _navItem(1, Icons.people_outline_rounded, 'Patients'),
-            _navItem(2, Icons.assignment_outlined, 'Logs'),
-            _navItem(3, Icons.calendar_today_outlined, 'Schedule'),
+            _navItem(1, Icons.description_outlined, 'Contracts'),
+            _navItem(2, Icons.people_outline_rounded, 'Patients'),
+            _navItem(3, Icons.assignment_outlined, 'Logs'),
+            _navItem(4, Icons.calendar_today_outlined, 'Schedule'),
           ],
         ),
       ),

@@ -27,11 +27,13 @@ class AlertEntry {
   final AlertType type;
   final String message;
   final String time;
+  final String? backendId;
 
   const AlertEntry({
     required this.type,
     required this.message,
     required this.time,
+    this.backendId,
   });
 }
 

@@ -49,9 +49,36 @@ class _AdminHomePageState extends State<AdminHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
-              const SizedBox(height: 8),
-              Text('Dashboard', style: SovaTheme.textTheme.displayMedium),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SovaColors.softGlass,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: SovaColors.charcoal, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
+                        const SizedBox(height: 8),
+                        Text('Dashboard',
+                            style: SovaTheme.textTheme.displayMedium),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
               Text(
                 'Welcome, ${AppState.caregiverName.value}',
                 style: TextStyle(color: SovaColors.sage, fontSize: 14),

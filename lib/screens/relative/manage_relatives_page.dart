@@ -13,6 +13,7 @@ class ManageRelativesPage extends StatefulWidget {
 class _ManageRelativesPageState extends State<ManageRelativesPage> {
   List<Map<String, dynamic>> _relatives = [];
   bool _loading = true;
+  bool _isPrimary = false;
 
   @override
   void initState() {
@@ -27,8 +28,20 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     try {
       final list = await ApiService.getRelativesForPatient(patientId);
       if (mounted) {
+        final myId = AppState.userId.value;
+        bool primary = false;
+        for (final rel in list) {
+          final relUser = rel['relative'] as Map<String, dynamic>? ?? rel;
+          final relId = relUser['id']?.toString();
+          final roleType = (rel['role_type'] as String? ?? '').toUpperCase();
+          if (relId == myId && roleType == 'PRIMARY') {
+            primary = true;
+            break;
+          }
+        }
         setState(() {
           _relatives = list.cast<Map<String, dynamic>>();
+          _isPrimary = primary;
           _loading = false;
         });
       }
@@ -36,8 +49,6 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  bool get _isPrimary => true;
 
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
@@ -149,6 +160,31 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     _load();
   }
 
+  Future<void> _removeRelative(Map<String, dynamic> rel) async {
+    final patientId = AppState.patientId.value;
+    final requesterId = AppState.userId.value;
+    if (patientId == null || requesterId == null) return;
+
+    final relUser = rel['relative'] as Map<String, dynamic>? ?? rel;
+    final username = relUser['username'] as String?;
+    if (username == null) return;
+
+    try {
+      await ApiService.removeRelative(
+        patientId: patientId,
+        requesterId: requesterId,
+        username: username,
+      );
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove relative: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final myId = AppState.userId.value;
@@ -162,6 +198,20 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: SovaColors.softGlass,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.arrow_back,
+                        color: SovaColors.charcoal, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,6 +262,7 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                                 canManage: _isPrimary && !isMe,
                                 onPromote: () => _changeType(rel, 'PRIMARY'),
                                 onDemote: () => _changeType(rel, 'SECONDARY'),
+                                onRemove: () => _removeRelative(rel),
                               )
                                   .animate()
                                   .fadeIn(delay: (i * 80).ms)
@@ -270,6 +321,7 @@ class _RelativeCard extends StatelessWidget {
   final bool canManage;
   final VoidCallback onPromote;
   final VoidCallback onDemote;
+  final VoidCallback onRemove;
 
   const _RelativeCard({
     required this.relative,
@@ -277,6 +329,7 @@ class _RelativeCard extends StatelessWidget {
     required this.canManage,
     required this.onPromote,
     required this.onDemote,
+    required this.onRemove,
   });
 
   @override
@@ -354,6 +407,7 @@ class _RelativeCard extends StatelessWidget {
             onSelected: (v) {
               if (v == 'promote') onPromote();
               if (v == 'demote') onDemote();
+              if (v == 'remove') onRemove();
             },
             itemBuilder: (_) => [
               if (!isPrimary)
@@ -375,6 +429,14 @@ class _RelativeCard extends StatelessWidget {
                     Text('Make Secondary'),
                   ]),
                 ),
+              const PopupMenuItem(
+                value: 'remove',
+                child: Row(children: [
+                  Icon(Icons.person_remove, size: 18, color: SovaColors.danger),
+                  SizedBox(width: 8),
+                  Text('Remove Relative'),
+                ]),
+              ),
             ],
           ),
       ]),

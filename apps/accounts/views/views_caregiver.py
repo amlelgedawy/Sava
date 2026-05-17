@@ -82,6 +82,35 @@ class CaregiverPatientsView(APIView):
             return handle_service_error(e)
 
 
+class CaregiverContractsView(APIView):
+    """GET /api/caregivers/<caregiver_id>/contracts?status=PENDING|ACTIVE|DECLINED|ENDED"""
+    def get(self, request, caregiver_id: str):
+        status_filter = request.query_params.get("status")
+        try:
+            contracts = CaregiverService.get_contracts_for_caregiver(caregiver_id, status_filter)
+            result = []
+            for c in contracts:
+                data = serialize_contract(c)
+                data["patient"] = serialize_patient(c.patient)
+                data["requester"] = serialize_user(c.offered_by)
+                result.append(data)
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            return handle_service_error(e)
+
+
+class PatientCaregiverView(APIView):
+    """GET /api/patients/<patient_id>/caregiver"""
+    def get(self, request, patient_id: str):
+        try:
+            caregiver = CaregiverService.get_caregiver_for_patient(patient_id)
+            if caregiver is None:
+                return Response(None, status=status.HTTP_200_OK)
+            return Response(serialize_user(caregiver), status=status.HTTP_200_OK)
+        except Exception as e:
+            return handle_service_error(e)
+
+
 class MedicationScheduleView(APIView):
     """
     GET  /api/patients/<patient_id>/medication

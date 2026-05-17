@@ -4,6 +4,7 @@ import '../../theme.dart';
 import '../../app_state.dart';
 import '../../models/patient_models.dart';
 import '../../models/user_models.dart';
+import '../../services/api_service.dart';
 
 class MedicineSchedulePage extends StatefulWidget {
   const MedicineSchedulePage({super.key});
@@ -12,17 +13,44 @@ class MedicineSchedulePage extends StatefulWidget {
 }
 
 class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
-  bool get _isReadOnly => AppState.userRole.value != UserRole.caregiver;
+  bool _isPrimaryRelative = false;
+
+  bool get _isReadOnly {
+    // Caregivers can always edit
+    if (AppState.userRole.value == UserRole.caregiver) return false;
+    // Primary relatives can edit
+    if (AppState.userRole.value == UserRole.relative && _isPrimaryRelative)
+      return false;
+    // Others are read-only
+    return true;
+  }
 
   @override
   void initState() {
     super.initState();
-    if (AppState.allMedications.value.isEmpty) {
-      AppState.allMedications.value = [
-        Medication(name: 'Aspirin 100mg', time: '08:00 AM'),
-        Medication(name: 'Metformin 500mg', time: '01:00 PM'),
-        Medication(name: 'Amlodipine 5mg', time: '09:00 PM'),
-      ];
+    _checkIfPrimaryRelative();
+  }
+
+  Future<void> _checkIfPrimaryRelative() async {
+    if (AppState.userRole.value != UserRole.relative) return;
+
+    final patientId = AppState.patientId.value;
+    final myId = AppState.userId.value;
+    if (patientId == null || myId == null) return;
+
+    try {
+      final relatives = await ApiService.getRelativesForPatient(patientId);
+      for (final rel in relatives) {
+        final relUser = rel['relative'] as Map<String, dynamic>? ?? rel;
+        final relId = relUser['id']?.toString();
+        final roleType = (rel['role_type'] as String? ?? '').toUpperCase();
+        if (relId == myId && roleType == 'PRIMARY') {
+          setState(() => _isPrimaryRelative = true);
+          return;
+        }
+      }
+    } catch (_) {
+      // Ignore errors, default to read-only
     }
   }
 
@@ -70,8 +98,8 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                   controller: nameCtrl,
                   decoration: const InputDecoration(
                     hintText: 'Medication name & dosage',
-                    prefixIcon: Icon(Icons.medication_outlined,
-                        color: SovaColors.sage),
+                    prefixIcon:
+                        Icon(Icons.medication_outlined, color: SovaColors.sage),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.all(16),
                   ),
@@ -80,8 +108,8 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
               const SizedBox(height: 16),
               GestureDetector(
                 onTap: () async {
-                  final t = await showTimePicker(
-                      context: ctx, initialTime: selected);
+                  final t =
+                      await showTimePicker(context: ctx, initialTime: selected);
                   if (t != null) setModal(() => selected = t);
                 },
                 child: Container(
@@ -168,6 +196,20 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: SovaColors.softGlass,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.arrow_back,
+                        color: SovaColors.charcoal, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,8 +225,8 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                 ),
                 if (_isReadOnly)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: SovaColors.sage.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
@@ -211,8 +253,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                       decoration: BoxDecoration(
                           color: SovaColors.navy,
                           borderRadius: BorderRadius.circular(16)),
-                      child:
-                          const Icon(Icons.add, color: Colors.white),
+                      child: const Icon(Icons.add, color: Colors.white),
                     ),
                   ),
               ]),
@@ -221,8 +262,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                 valueListenable: AppState.patientName,
                 builder: (_, name, __) => Text(
                   'Patient: $name',
-                  style:
-                      const TextStyle(color: SovaColors.sage, fontSize: 14),
+                  style: const TextStyle(color: SovaColors.sage, fontSize: 14),
                 ),
               ),
               const SizedBox(height: 28),
@@ -254,17 +294,13 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                     }
                     return ListView.separated(
                       itemCount: meds.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 12),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) => _MedCard(
                         med: meds[i],
                         readOnly: _isReadOnly,
                         onToggle: () => _toggleTaken(i),
                         onDelete: () => _deleteMed(i),
-                      )
-                          .animate()
-                          .fadeIn(delay: (i * 60).ms)
-                          .slideY(begin: 0.1),
+                      ).animate().fadeIn(delay: (i * 60).ms).slideY(begin: 0.1),
                     );
                   },
                 ),
@@ -316,9 +352,8 @@ class _MedCard extends StatelessWidget {
               color: med.isTaken ? SovaColors.success : Colors.transparent,
               shape: BoxShape.circle,
               border: Border.all(
-                color: med.isTaken
-                    ? SovaColors.success
-                    : SovaColors.sensorNeutral,
+                color:
+                    med.isTaken ? SovaColors.success : SovaColors.sensorNeutral,
                 width: 2,
               ),
             ),
@@ -338,18 +373,16 @@ class _MedCard extends StatelessWidget {
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
                   color: SovaColors.charcoal,
-                  decoration:
-                      med.isTaken ? TextDecoration.lineThrough : null,
+                  decoration: med.isTaken ? TextDecoration.lineThrough : null,
                 ),
               ),
               const SizedBox(height: 2),
               Row(children: [
-                const Icon(Icons.access_time,
-                    size: 13, color: SovaColors.sage),
+                const Icon(Icons.access_time, size: 13, color: SovaColors.sage),
                 const SizedBox(width: 4),
                 Text(med.time,
-                    style: const TextStyle(
-                        color: SovaColors.sage, fontSize: 13)),
+                    style:
+                        const TextStyle(color: SovaColors.sage, fontSize: 13)),
               ]),
             ],
           ),

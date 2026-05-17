@@ -122,7 +122,6 @@ class MockService {
     required String email,
     required String password,
     required String patientName,
-    String? proofOfRelation,
   }) async {
     await Future.delayed(const Duration(milliseconds: 700));
     final relId = _genId('rel');
@@ -131,7 +130,6 @@ class MockService {
       id: patId,
       name: patientName,
       primaryRelativeId: relId,
-      proofOfRelation: proofOfRelation,
     );
     final user = RelativeUser(
       id: relId,
@@ -256,8 +254,8 @@ class MockService {
     final idx = _users.indexWhere((u) => u.id == caregiverId);
     if (idx == -1) return false;
     final cg = _users[idx] as CaregiverUser;
-    _users[idx] =
-        cg.copyWith(cvVerified: true, salary: salary, yearsExperience: yearsExperience);
+    _users[idx] = cg.copyWith(
+        cvVerified: true, salary: salary, yearsExperience: yearsExperience);
     return true;
   }
 

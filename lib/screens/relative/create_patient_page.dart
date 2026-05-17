@@ -1,46 +1,34 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:http/http.dart' as http;
 import '../../main.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
-import '../../models/user_models.dart';
 import '../../services/api_service.dart';
 import '../../services/database_service.dart';
-import '../caregiver/caregiver_wrapper.dart';
 
-class CaregiverSignupPage extends StatefulWidget {
-  const CaregiverSignupPage({super.key});
+class CreatePatientPage extends StatefulWidget {
+  const CreatePatientPage({super.key});
   @override
-  State<CaregiverSignupPage> createState() => _CaregiverSignupPageState();
+  State<CreatePatientPage> createState() => _CreatePatientPageState();
 }
 
-class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
+class _CreatePatientPageState extends State<CreatePatientPage> {
   final _pageController = PageController();
   int _step = 0;
   bool _loading = false;
 
-  // Step 0 – Basic Info
+  // Step 0 – Patient Info
   final _nameCtrl = TextEditingController();
-  final _usernameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  final _confirmCtrl = TextEditingController();
-  bool _passVisible = false;
+  DateTime? _dob;
+  String _gender = 'MALE';
+  final _medCtrl = TextEditingController();
   String? _error0;
 
-  // Step 1 – Professional Info
-  final _ageCtrl = TextEditingController();
-  final _idCtrl = TextEditingController();
-  String? _cvFile;
-  String? _error1;
-
-  // Step 2 – Face Video
+  // Step 1 – Patient Face Video
   CameraController? _cameraController;
   bool _cameraReady = false;
   bool _videoRecorded = false;
@@ -53,26 +41,14 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
   void dispose() {
     _pageController.dispose();
     _nameCtrl.dispose();
-    _usernameCtrl.dispose();
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    _confirmCtrl.dispose();
-    _ageCtrl.dispose();
-    _idCtrl.dispose();
+    _medCtrl.dispose();
     _cameraController?.dispose();
     super.dispose();
   }
 
   void _next() {
     if (_step == 0 && !_validateStep0()) return;
-    if (_step == 1 && !_validateStep1()) return;
-    if (_step == 2) {
-      if (!_videoRecorded) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please record your face video first')),
-        );
-        return;
-      }
+    if (_step == 1) {
       _submit();
       return;
     }
@@ -86,7 +62,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
       Navigator.pop(context);
       return;
     }
-    if (_step == 2) {
+    if (_step == 1) {
       _stopCamera();
     }
     setState(() => _step--);
@@ -95,39 +71,27 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
   }
 
   bool _validateStep0() {
-    if ([_nameCtrl, _usernameCtrl, _emailCtrl, _passCtrl, _confirmCtrl]
-        .any((c) => c.text.isEmpty)) {
-      setState(() => _error0 = 'Please fill all fields');
+    if (_nameCtrl.text.trim().isEmpty) {
+      setState(() => _error0 = 'Patient name is required');
       return false;
     }
-    if (!_emailCtrl.text.contains('@')) {
-      setState(() => _error0 = 'Enter a valid email');
-      return false;
-    }
-    if (_passCtrl.text.length < 8) {
-      setState(() => _error0 = 'Password must be at least 8 characters');
-      return false;
-    }
-    if (_passCtrl.text != _confirmCtrl.text) {
-      setState(() => _error0 = 'Passwords do not match');
+    if (_dob == null) {
+      setState(() => _error0 = 'Date of birth is required');
       return false;
     }
     setState(() => _error0 = null);
     return true;
   }
 
-  bool _validateStep1() {
-    final age = int.tryParse(_ageCtrl.text);
-    if (age == null || age < 18) {
-      setState(() => _error1 = 'Enter a valid age (18+)');
-      return false;
-    }
-    if (_idCtrl.text.length != 14) {
-      setState(() => _error1 = 'National ID must be exactly 14 digits');
-      return false;
-    }
-    setState(() => _error1 = null);
-    return true;
+  Future<void> _pickDob() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dob ?? DateTime(now.year - 70),
+      firstDate: DateTime(1900),
+      lastDate: now,
+    );
+    if (picked != null) setState(() => _dob = picked);
   }
 
   Future<void> _startCamera() async {
@@ -152,8 +116,9 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
   }
 
   Future<void> _startRecording() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized)
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
       return;
+    }
     try {
       await _cameraController!.startVideoRecording();
       setState(() {
@@ -182,52 +147,60 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      final data = await ApiService.signupCaregiver(
-        name: _nameCtrl.text.trim(),
-        username: _usernameCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-        confirmPassword: _confirmCtrl.text,
-        age: int.parse(_ageCtrl.text),
-        nationalId: _idCtrl.text,
-        cvFilePath: _cvFile,
-      );
-      final id = data['id'].toString();
-      AppState.userId.value = id;
-      AppState.caregiverId.value = id;
-      AppState.userRole.value = UserRole.caregiver;
-      AppState.caregiverName.value = data['name'] as String? ?? '';
+      final relativeId = AppState.userId.value;
+      if (relativeId == null) throw 'No user ID';
 
-      // Upload face video to AI server (non-blocking)
+      final dobStr =
+          '${_dob!.year}-${_dob!.month.toString().padLeft(2, '0')}-${_dob!.day.toString().padLeft(2, '0')}';
+
+      final patient = await ApiService.createPatient(
+        relativeId: relativeId,
+        name: _nameCtrl.text.trim(),
+        dateOfBirth: dobStr,
+        gender: _gender,
+        currentMedication: _medCtrl.text.trim().isNotEmpty
+            ? _medCtrl.text.trim()
+            : null,
+      );
+
+      final patientId = patient['id'].toString();
+      final patientName = patient['name'] as String? ?? '';
+      AppState.patientId.value = patientId;
+      AppState.patientName.value = patientName;
+
+      // Upload patient face video to AI server (non-blocking)
       if (_recordedVideo != null) {
         try {
           final bytes = await _recordedVideo!.readAsBytes();
           final name = _nameCtrl.text.trim().toLowerCase();
           final req = http.MultipartRequest(
-              'POST', Uri.parse('$_aiUrl/enroll-caregiver'));
+              'POST', Uri.parse('$_aiUrl/enroll-patient'));
           req.files.add(http.MultipartFile.fromBytes('video', bytes,
               filename: 'recording.mp4'));
           req.fields['person_name'] = name;
+          req.fields['patient_id'] = patientId;
           await req.send().timeout(const Duration(seconds: 10));
         } catch (_) {
-          // Video upload failed, but continue with signup
-          print('Face video upload failed, continuing with signup');
+          // Video upload failed, but continue
         }
       }
 
-      DatabaseService.startAlertPollingForUser(id);
       DatabaseService.refreshDashboard();
-      AppState.isLoggedIn.value = true;
+      DatabaseService.fetchActivityHistory();
     } catch (e) {
-      if (mounted) setState(() => _error1 = e.toString());
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _error0 = e.toString();
+          _loading = false;
+        });
+      }
       return;
     }
     setState(() {
       _loading = false;
-      _step = 3;
+      _step = 2;
     });
-    _pageController.animateToPage(3,
+    _pageController.animateToPage(2,
         duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
   }
 
@@ -238,7 +211,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: _step < 3
+        leading: _step < 2
             ? IconButton(
                 icon: const Icon(Icons.arrow_back_ios,
                     color: SovaColors.charcoal, size: 20),
@@ -248,7 +221,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
       ),
       body: Column(
         children: [
-          if (_step < 3) _stepBar(),
+          if (_step < 2) _stepBar(),
           Expanded(
             child: PageView(
               controller: _pageController,
@@ -256,7 +229,6 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
               children: [
                 _buildStep0(),
                 _buildStep1(),
-                _buildStep2(),
                 _buildDone(),
               ],
             ),
@@ -270,7 +242,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
       child: Row(
-        children: List.generate(3, (i) {
+        children: List.generate(2, (i) {
           final done = i < _step;
           final active = i == _step;
           return Expanded(
@@ -281,7 +253,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
                 color: done
                     ? SovaColors.success
                     : active
-                        ? SovaColors.navy
+                        ? SovaColors.coral
                         : SovaColors.sensorNeutral,
                 borderRadius: BorderRadius.circular(2),
               ),
@@ -292,7 +264,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
     );
   }
 
-  // ── Step 0: Basic Info ───────────────────────────────────────────────────
+  // ── Step 0: Patient Info ─────────────────────────────────────────────────
 
   Widget _buildStep0() {
     return SingleChildScrollView(
@@ -300,30 +272,67 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('CAREGIVER', style: SovaTheme.textTheme.labelMedium),
+          Text('NEW PATIENT', style: SovaTheme.textTheme.labelMedium),
           const SizedBox(height: 8),
-          Text('Basic Information', style: SovaTheme.textTheme.displayMedium),
-          Text('Step 1 of 3',
+          Text('Patient Information', style: SovaTheme.textTheme.displayMedium),
+          Text('Step 1 of 2',
               style: TextStyle(color: SovaColors.sage, fontSize: 14)),
           const SizedBox(height: 32),
-          _field(_nameCtrl, 'Full Name', Icons.person_outline),
+          _field(_nameCtrl, 'Patient Full Name', Icons.person_outline),
           const SizedBox(height: 16),
-          _field(_usernameCtrl, 'Username', Icons.alternate_email),
+          // DOB picker
+          GestureDetector(
+            onTap: _pickDob,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(28)),
+              child: Row(children: [
+                Icon(Icons.calendar_today_outlined, color: SovaColors.sage),
+                const SizedBox(width: 12),
+                Text(
+                  _dob != null
+                      ? '${_dob!.day}/${_dob!.month}/${_dob!.year}'
+                      : 'Date of Birth',
+                  style: TextStyle(
+                    color: _dob != null ? SovaColors.charcoal : SovaColors.sage,
+                    fontSize: 16,
+                  ),
+                ),
+              ]),
+            ),
+          ),
           const SizedBox(height: 16),
-          _field(_emailCtrl, 'Email', Icons.email_outlined,
-              type: TextInputType.emailAddress),
+          // Gender selector
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            decoration: BoxDecoration(
+                color: Colors.white, borderRadius: BorderRadius.circular(28)),
+            child: Row(children: [
+              Icon(Icons.wc_outlined, color: SovaColors.sage),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _gender,
+                    isExpanded: true,
+                    items: const [
+                      DropdownMenuItem(value: 'MALE', child: Text('Male')),
+                      DropdownMenuItem(value: 'FEMALE', child: Text('Female')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _gender = v);
+                    },
+                  ),
+                ),
+              ),
+            ]),
+          ),
           const SizedBox(height: 16),
-          _field(_passCtrl, 'Password', Icons.lock_outline,
-              obscure: !_passVisible,
-              suffix: IconButton(
-                icon: Icon(
-                    _passVisible ? Icons.visibility_off : Icons.visibility,
-                    color: SovaColors.sage),
-                onPressed: () => setState(() => _passVisible = !_passVisible),
-              )),
-          const SizedBox(height: 16),
-          _field(_confirmCtrl, 'Confirm Password', Icons.lock_outline,
-              obscure: true),
+          _field(_medCtrl, 'Current Medication (optional)',
+              Icons.medication_outlined),
           if (_error0 != null) _errorText(_error0!),
           const SizedBox(height: 32),
           _primaryBtn('Continue', _next),
@@ -332,55 +341,9 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
     );
   }
 
-  // ── Step 1: Professional Info ────────────────────────────────────────────
+  // ── Step 1: Patient Face Video ───────────────────────────────────────────
 
   Widget _buildStep1() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('CAREGIVER', style: SovaTheme.textTheme.labelMedium),
-          const SizedBox(height: 8),
-          Text('Professional Info', style: SovaTheme.textTheme.displayMedium),
-          Text('Step 2 of 3',
-              style: TextStyle(color: SovaColors.sage, fontSize: 14)),
-          const SizedBox(height: 32),
-          _field(_ageCtrl, 'Age', Icons.cake_outlined,
-              type: TextInputType.number),
-          const SizedBox(height: 16),
-          _field(_idCtrl, 'National ID Number (14 digits)',
-              Icons.credit_card_outlined,
-              type: TextInputType.number),
-          const SizedBox(height: 16),
-          _uploadTile(
-            label: 'Upload CV (PDF)',
-            icon: Icons.description_outlined,
-            file: _cvFile != null
-                ? _cvFile!.split(Platform.pathSeparator).last
-                : null,
-            onTap: () async {
-              final result = await FilePicker.platform.pickFiles(
-                type: FileType.custom,
-                allowedExtensions: ['pdf'],
-              );
-              if (result != null && result.files.single.path != null) {
-                setState(() => _cvFile = result.files.single.path);
-              }
-            },
-          ),
-          if (_error1 != null) _errorText(_error1!),
-          const SizedBox(height: 32),
-          _primaryBtn('Continue', _next),
-        ],
-      ),
-    );
-  }
-
-  // ── Step 2: Face Video ───────────────────────────────────────────────────
-
-  Widget _buildStep2() {
-    // Start camera when entering step 2
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_cameraController == null) _startCamera();
     });
@@ -390,14 +353,15 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('CAREGIVER', style: SovaTheme.textTheme.labelMedium),
+          Text('NEW PATIENT', style: SovaTheme.textTheme.labelMedium),
           const SizedBox(height: 8),
-          Text('Face Verification', style: SovaTheme.textTheme.displayMedium),
-          Text('Step 3 of 3',
+          Text("Patient's Face Video",
+              style: SovaTheme.textTheme.displayMedium),
+          Text('Step 2 of 2',
               style: TextStyle(color: SovaColors.sage, fontSize: 14)),
           const SizedBox(height: 12),
           Text(
-            'Record a 10–15 second video of your face for identity verification.',
+            'Record a 10–15 second video of the patient\'s face for identification.',
             style: TextStyle(color: SovaColors.sage, height: 1.5),
           ),
           const Spacer(),
@@ -413,7 +377,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
                         ? CameraPreview(_cameraController!)
                         : const Center(
                             child: CircularProgressIndicator(
-                                color: SovaColors.navy),
+                                color: SovaColors.coral),
                           ),
                   ),
                   if (_recording)
@@ -435,16 +399,25 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
           const SizedBox(height: 20),
           if (!_videoRecorded)
             _primaryBtn('Start Recording (13s)', _startRecording,
-                color: SovaColors.navy)
+                color: SovaColors.coral)
           else
             _primaryBtn(
-                'Re-record', () => setState(() => _videoRecorded = false),
-                color: SovaColors.coral),
+                'Re-record',
+                () => setState(() => _videoRecorded = false),
+                color: SovaColors.navy),
           const Spacer(),
           _primaryBtn(
-            _loading ? 'Submitting...' : 'Submit Application',
+            _loading ? 'Creating Patient...' : 'Create Patient',
             _loading ? null : _next,
-            color: _videoRecorded ? SovaColors.navy : SovaColors.sensorNeutral,
+            color: SovaColors.coral,
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: TextButton(
+              onPressed: _loading ? null : _next,
+              child: Text('Skip video for now',
+                  style: TextStyle(color: SovaColors.sage, fontSize: 13)),
+            ),
           ),
           const SizedBox(height: 16),
         ],
@@ -452,7 +425,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
     );
   }
 
-  // ── Step 3: Done ─────────────────────────────────────────────────────────
+  // ── Step 2: Done ─────────────────────────────────────────────────────────
 
   Widget _buildDone() {
     return Center(
@@ -472,23 +445,19 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
                   color: SovaColors.success, size: 56),
             ).animate().scale(delay: 200.ms),
             const SizedBox(height: 32),
-            Text('Application Submitted!',
+            Text('Patient Created!',
                 style: SovaTheme.textTheme.displayMedium,
                 textAlign: TextAlign.center),
             const SizedBox(height: 12),
             Text(
-              'Your CV is under review. You can use the app while your credentials are being verified.',
+              'You can now monitor ${AppState.patientName.value} and assign a caregiver.',
               style: TextStyle(color: SovaColors.sage, height: 1.6),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 48),
-            _primaryBtn('Enter App', () {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const CaregiverWrapper()),
-                (_) => false,
-              );
-            }),
+            _primaryBtn('Done', () {
+              Navigator.pop(context, true);
+            }, color: SovaColors.coral),
           ],
         ).animate().fadeIn(delay: 100.ms),
       ),
@@ -503,7 +472,6 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
     IconData icon, {
     bool obscure = false,
     TextInputType? type,
-    Widget? suffix,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -515,53 +483,9 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
         decoration: InputDecoration(
           hintText: hint,
           prefixIcon: Icon(icon, color: SovaColors.sage),
-          suffixIcon: suffix,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.all(20),
         ),
-      ),
-    );
-  }
-
-  Widget _uploadTile({
-    required String label,
-    required IconData icon,
-    required String? file,
-    required VoidCallback onTap,
-  }) {
-    final uploaded = file != null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: uploaded
-              ? SovaColors.success.withValues(alpha: 0.08)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: uploaded
-                ? SovaColors.success.withValues(alpha: 0.4)
-                : SovaColors.sensorNeutral,
-            width: 1.5,
-          ),
-        ),
-        child: Row(children: [
-          Icon(uploaded ? Icons.check_circle : icon,
-              color: uploaded ? SovaColors.success : SovaColors.sage),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              uploaded ? file : 'Tap to upload $label',
-              style: TextStyle(
-                color: uploaded ? SovaColors.success : SovaColors.sage,
-                fontWeight: uploaded ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ),
-          if (!uploaded) Icon(Icons.upload_outlined, color: SovaColors.sage),
-        ]),
       ),
     );
   }
@@ -582,7 +506,7 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
           borderRadius: BorderRadius.circular(30),
         ),
         child: Center(
-          child: _loading
+          child: _loading && label.contains('...')
               ? const CircularProgressIndicator(color: Colors.white)
               : Text(label,
                   style: const TextStyle(

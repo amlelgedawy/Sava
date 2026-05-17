@@ -4,7 +4,6 @@ import '../theme.dart';
 import '../app_state.dart';
 import '../services/database_service.dart';
 import 'login_page.dart';
-import 'main_wrapper.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -34,10 +33,12 @@ class _SignupPageState extends State<SignupPage> {
 
   void _onSuccess() {
     if (AppState.isLoggedIn.value && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
-      );
+      // signup_page.dart is obsolete - auth flow now uses LandingPage
+      // which navigates to role-specific wrappers directly
+      // Navigator.pushReplacement(
+      //   context,
+      //   MaterialPageRoute(builder: (_) => const MainWrapper()),
+      // );
     }
   }
 
@@ -50,8 +51,7 @@ class _SignupPageState extends State<SignupPage> {
   void _signup() {
     if (_nameController.text.isEmpty ||
         _emailController.text.isEmpty ||
-        _passwordController.text.isEmpty)
-      return;
+        _passwordController.text.isEmpty) return;
     DatabaseService.signup(
       name: _nameController.text,
       email: _emailController.text,

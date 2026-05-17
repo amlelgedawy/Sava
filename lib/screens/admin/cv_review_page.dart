@@ -133,15 +133,38 @@ class _CvReviewPageState extends State<CvReviewPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(ctx),
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                          color: SovaColors.sensorNeutral,
-                          borderRadius: BorderRadius.circular(28)),
-                      child: const Icon(Icons.close, color: SovaColors.sage),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () async {
+                        final adminId = AppState.userId.value ?? '';
+                        try {
+                          await ApiService.adminRejectCaregiver(
+                            adminId: adminId,
+                            caregiverId: cg['id'].toString(),
+                          );
+                        } catch (_) {}
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _load();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content:
+                                    Text('${cg['name']} application rejected')),
+                          );
+                        }
+                      },
+                      child: Container(
+                        height: 56,
+                        decoration: BoxDecoration(
+                            color: SovaColors.danger,
+                            borderRadius: BorderRadius.circular(28)),
+                        child: const Center(
+                          child: Text('Reject',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      ),
                     ),
                   ),
                 ]),
@@ -164,12 +187,39 @@ class _CvReviewPageState extends State<CvReviewPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
-              const SizedBox(height: 8),
-              Text('CV Review', style: SovaTheme.textTheme.displayMedium),
-              Text(
-                '${_loading ? '...' : _pending.length} pending verification',
-                style: TextStyle(color: SovaColors.sage, fontSize: 14),
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: SovaColors.softGlass,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: SovaColors.charcoal, size: 18),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
+                        const SizedBox(height: 8),
+                        Text('CV Review',
+                            style: SovaTheme.textTheme.displayMedium),
+                        Text(
+                          '${_loading ? '...' : _pending.length} pending verification',
+                          style:
+                              TextStyle(color: SovaColors.sage, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 32),
               Expanded(

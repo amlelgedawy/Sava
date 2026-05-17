@@ -175,27 +175,6 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                    color: SovaColors.softGlass,
-                    borderRadius: BorderRadius.circular(16)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Demo Accounts',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: SovaColors.charcoal)),
-                    const SizedBox(height: 8),
-                    _demoRow('Caregiver', 'ahmed@sava.com', 'pass123'),
-                    _demoRow('Relative', 'mohamed@sava.com', 'pass123'),
-                    _demoRow('Admin', 'admin@sava.com', 'admin123'),
-                  ],
-                ),
-              ).animate().fadeIn(delay: 400.ms),
             ],
           ),
         ),
@@ -225,29 +204,6 @@ class _LoginPageState extends State<LoginPage> {
           border: InputBorder.none,
           contentPadding: const EdgeInsets.all(20),
         ),
-      ),
-    );
-  }
-
-  Widget _demoRow(String role, String email, String pass) {
-    return GestureDetector(
-      onTap: () {
-        _emailCtrl.text = email;
-        _passCtrl.text = pass;
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(children: [
-          Text('$role: ',
-              style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
-          Text(email,
-              style: const TextStyle(
-                  color: SovaColors.charcoal,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          Text(' / $pass',
-              style: const TextStyle(color: SovaColors.sage, fontSize: 12)),
-        ]),
       ),
     );
   }
