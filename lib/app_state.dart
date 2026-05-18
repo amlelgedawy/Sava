@@ -56,6 +56,37 @@ class DetectedFace {
   });
 }
 
+// ── Activity Recognition Result ───────────────────────────────────────────────
+class ActivityResult {
+  final String? activity; // e.g. "WALK", "FALL", null = uncertain
+  final double confidence;
+  final bool fallAlert;
+  final bool wandering;
+  final int bufferProgress; // 0..64
+  final int bufferTarget;
+  final List<DetectedObject> personBoxes;
+
+  const ActivityResult({
+    this.activity,
+    required this.confidence,
+    required this.fallAlert,
+    required this.wandering,
+    required this.bufferProgress,
+    required this.bufferTarget,
+    required this.personBoxes,
+  });
+
+  static const ActivityResult empty = ActivityResult(
+    activity: null,
+    confidence: 0.0,
+    fallAlert: false,
+    wandering: false,
+    bufferProgress: 0,
+    bufferTarget: 64,
+    personBoxes: [],
+  );
+}
+
 enum AlertType {
   none,
   fall,
@@ -89,6 +120,11 @@ class AppState {
   // ---- FACE DETECTION (backwards compat) ----
   static final ValueNotifier<List<DetectedFace>> detectedFaces = ValueNotifier(
     [],
+  );
+
+  // ---- ACTIVITY RECOGNITION ----
+  static final ValueNotifier<ActivityResult> activityResult = ValueNotifier(
+    ActivityResult.empty,
   );
 
   // ---- ALERT HISTORY ----

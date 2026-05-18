@@ -15,6 +15,9 @@ class ApiService {
   // Face recognition server
   static const String _faceAiUrl = "http://10.0.2.2:5000";
 
+  // Activity recognition server
+  static const String _activityServerUrl = "http://10.0.2.2:5003";
+
   // AUTH
 
   /// POST /api/auth/login  → returns full user map or throws
@@ -493,9 +496,8 @@ class ApiService {
 
     if (hasDangerousObject) {
       if (AppState.alertStatus.value != AlertType.sharpObject) {
-        AppState.logAlert(AlertType.sharpObject);
+        AppState.alertStatus.value = AlertType.none;
       }
-      AppState.alertStatus.value = AlertType.sharpObject;
     } else if (AppState.alertStatus.value == AlertType.sharpObject) {
       AppState.alertStatus.value = AlertType.none;
     }
@@ -562,6 +564,110 @@ class ApiService {
       }
       AppState.alertStatus.value = AlertType.unknown_face;
     } else if (AppState.alertStatus.value == AlertType.unknown_face) {
+      AppState.alertStatus.value = AlertType.none;
+    }
+  }
+
+  // ACTIVITY RECOGNITION — POST /process-frame to port 5003
+
+  static Future<void> processActivityFrame(Uint8List frameBytes) async {
+    try {
+      final patientId = AppState.patientId.value;
+      final req = http.MultipartRequest(
+          'POST', Uri.parse('$_activityServerUrl/process-frame'));
+      req.files.add(http.MultipartFile.fromBytes('frame', frameBytes,
+          filename: 'frame.jpg'));
+      if (patientId != null) {
+        req.fields['patient_id'] = patientId;
+      }
+      final streamed = await req.send();
+      final resp = await http.Response.fromStream(streamed);
+      if (resp.statusCode == 200) {
+        _handleActivityResponse(resp.body);
+      } else {
+        AppState.activityResult.value = ActivityResult.empty;
+      }
+    } catch (_) {
+      AppState.activityResult.value = ActivityResult.empty;
+    }
+  }
+
+  static void _handleActivityResponse(String responseText) {
+    final data = json.decode(responseText) as Map<String, dynamic>;
+
+    final activity = data['activity'] as String?;
+    final confidence = (data['confidence'] as num? ?? 0.0).toDouble();
+    final fallAlert = data['fall_alert'] as bool? ?? false;
+    final wandering = data['wandering'] as bool? ?? false;
+    final bufferProgress = (data['buffer_progress'] as num? ?? 0).toInt();
+    final bufferTarget = (data['buffer_target'] as num? ?? 64).toInt();
+
+    // Person bounding boxes (for AR overlay)
+    final rawPersons = data['person_boxes'] as List<dynamic>? ?? [];
+    final personBoxes = <DetectedObject>[];
+    for (final raw in rawPersons) {
+      final m = raw as Map<String, dynamic>;
+      personBoxes.add(DetectedObject(
+        label: 'person',
+        confidence: (m['confidence'] as num? ?? 0.0).toDouble(),
+        top: (m['y1'] as num? ?? 0.0).toDouble(),
+        left: (m['x1'] as num? ?? 0.0).toDouble(),
+        bottom: (m['y2'] as num? ?? 1.0).toDouble(),
+        right: (m['x2'] as num? ?? 1.0).toDouble(),
+      ));
+    }
+
+    // Dangerous objects: route into existing detectedObjects channel
+    final rawDangerous = data['dangerous_objects'] as List<dynamic>? ?? [];
+    final dangerousObjects = <DetectedObject>[];
+    bool hasHighDanger = false;
+    for (final raw in rawDangerous) {
+      final m = raw as Map<String, dynamic>;
+      final label = (m['label'] as String? ?? 'unknown').toLowerCase();
+      final conf = (m['confidence'] as num? ?? 0.0).toDouble();
+      final box = m['box'] as Map<String, dynamic>?;
+      dangerousObjects.add(DetectedObject(
+        label: label,
+        confidence: conf,
+        top: box != null ? (box['y1'] as num? ?? 0.0).toDouble() : 0.0,
+        left: box != null ? (box['x1'] as num? ?? 0.0).toDouble() : 0.0,
+        bottom: box != null ? (box['y2'] as num? ?? 1.0).toDouble() : 1.0,
+        right: box != null ? (box['x2'] as num? ?? 1.0).toDouble() : 1.0,
+      ));
+      final danger = (m['danger_level'] as String? ?? 'LOW').toUpperCase();
+      if (danger == 'HIGH' || danger == 'MEDIUM') hasHighDanger = true;
+    }
+
+    AppState.activityResult.value = ActivityResult(
+      activity: activity,
+      confidence: confidence,
+      fallAlert: fallAlert,
+      wandering: wandering,
+      bufferProgress: bufferProgress,
+      bufferTarget: bufferTarget,
+      personBoxes: personBoxes,
+    );
+    AppState.detectedObjects.value = dangerousObjects;
+
+    // Update top-level alert status (FALL takes priority)
+    if (fallAlert) {
+      if (AppState.alertStatus.value != AlertType.fall) {
+        AppState.logAlert(AlertType.fall);
+      }
+      AppState.alertStatus.value = AlertType.fall;
+    } else if (wandering) {
+      if (AppState.alertStatus.value != AlertType.wandering) {
+        AppState.logAlert(AlertType.wandering);
+      }
+      AppState.alertStatus.value = AlertType.wandering;
+    } else if (hasHighDanger) {
+      if (AppState.alertStatus.value != AlertType.sharpObject) {
+        AppState.logAlert(AlertType.sharpObject);
+      }
+      AppState.alertStatus.value = AlertType.sharpObject;
+    } else if (AppState.alertStatus.value == AlertType.fall ||
+        AppState.alertStatus.value == AlertType.wandering ||
+        AppState.alertStatus.value == AlertType.sharpObject) {
       AppState.alertStatus.value = AlertType.none;
     }
   }

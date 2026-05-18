@@ -23,6 +23,13 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
   void initState() {
     super.initState();
     _load();
+    AppState.patientId.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    AppState.patientId.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -125,16 +132,19 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Offer sent to caregiver')),
         );
+        setState(() {
+          _pendingCaregiverIds = {..._pendingCaregiverIds, caregiverId};
+          _sendingOffer = false;
+        });
         _load();
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _sendingOffer = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(e.toString())),
         );
       }
-    } finally {
-      if (mounted) setState(() => _sendingOffer = false);
     }
   }
 

@@ -80,18 +80,6 @@ class LandingPage extends StatelessWidget {
                   ),
                 ),
               ),
-              Center(
-                child: TextButton(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
-                  ),
-                  child: const Text(
-                    'Admin Access',
-                    style: TextStyle(color: SovaColors.sage, fontSize: 12),
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
             ],
           ),

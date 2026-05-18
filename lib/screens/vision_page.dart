@@ -13,9 +13,11 @@ import '../theme.dart';
 //  Flow:
 //    1. Opens the browser camera via getUserMedia → shows live <video> feed
 //    2. Every 2s: captures frame as JPEG
-//    3. Sends frame to BOTH:
-//       - Port 5001 → YOLO object detection → draws RED AR boxes
-//       - Port 5000 → Face recognition → draws GREEN (known) or RED (unknown) AR boxes
+//    3. Sends frame to THREE pipelines in parallel:
+//       - Port 5002 → YOLO dangerous object detection → RED AR boxes
+//       - Port 5000 → Face recognition → GREEN (known) / RED (unknown) AR boxes
+//       - Port 5003 → Activity recognition (YOLO person + pose + SkateFormer
+//                     + wandering + dangerous object detection)
 //    4. Reads AppState.alertStatus → shows alert banner
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -67,11 +69,14 @@ class _VisionPageState extends State<VisionPage> {
     try {
       final file = await _controller!.takePicture();
       final bytes = await file.readAsBytes();
+      // Fire all three pipelines in parallel — they run on different ports.
       ApiService.detectObjects(bytes);
       ApiService.analyzeFace(bytes);
+      ApiService.processActivityFrame(bytes);
     } catch (_) {
       AppState.detectedObjects.value = [];
       AppState.detectedFaces.value = [];
+      AppState.activityResult.value = ActivityResult.empty;
     } finally {
       _isSending = false;
     }
@@ -82,6 +87,7 @@ class _VisionPageState extends State<VisionPage> {
     _controller?.dispose();
     AppState.detectedObjects.value = [];
     AppState.detectedFaces.value = [];
+    AppState.activityResult.value = ActivityResult.empty;
   }
 
   @override
@@ -133,7 +139,30 @@ class _VisionPageState extends State<VisionPage> {
               ),
             ),
 
-          // ── 4. ALERT BANNER ───────────────────────────────────────────────
+          // ── 3b. PERSON BOUNDING BOXES (CYAN) from activity server ────────
+          if (_cameraReady)
+            Positioned.fill(
+              child: ValueListenableBuilder<ActivityResult>(
+                valueListenable: AppState.activityResult,
+                builder: (context, result, _) {
+                  if (result.personBoxes.isEmpty) return const SizedBox();
+                  return CustomPaint(
+                    painter: _PersonBoxPainter(boxes: result.personBoxes),
+                  );
+                },
+              ),
+            ),
+
+          // ── 4. PATIENT + ACTIVITY INFO OVERLAY ───────────────────────────
+          if (_cameraReady)
+            Positioned(
+              bottom: 90,
+              left: 16,
+              right: 16,
+              child: _InfoOverlay(),
+            ),
+
+          // ── 5. ALERT BANNER ───────────────────────────────────────────────
           ValueListenableBuilder<AlertType>(
             valueListenable: AppState.alertStatus,
             builder: (context, alert, _) {
@@ -185,7 +214,7 @@ class _VisionPageState extends State<VisionPage> {
             },
           ),
 
-          // ── 5. CLOSE BUTTON ───────────────────────────────────────────────
+          // ── 6. CLOSE BUTTON ───────────────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -210,7 +239,7 @@ class _VisionPageState extends State<VisionPage> {
             ),
           ),
 
-          // ── 6. AI STATUS BADGE ────────────────────────────────────────────
+          // ── 7. AI STATUS BADGE ────────────────────────────────────────────
           Positioned(
             bottom: 32,
             right: 24,
@@ -324,8 +353,7 @@ class _ObjectBoxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _ObjectBoxPainter old) =>
-      old.objects != objects;
+  bool shouldRepaint(covariant _ObjectBoxPainter old) => old.objects != objects;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -423,6 +451,66 @@ class _FaceBoxPainter extends CustomPainter {
   bool shouldRepaint(covariant _FaceBoxPainter old) => old.faces != faces;
 }
 
+//  _PersonBoxPainter — CYAN boxes for YOLO person detections (activity server)
+class _PersonBoxPainter extends CustomPainter {
+  final List<DetectedObject> boxes;
+
+  const _PersonBoxPainter({required this.boxes});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const Color color = Color(0xFF00E5FF); // cyan
+    for (final box in boxes) {
+      final double x1 = box.left * size.width;
+      final double y1 = box.top * size.height;
+      final double x2 = box.right * size.width;
+      final double y2 = box.bottom * size.height;
+      final Rect rect = Rect.fromLTRB(x1, y1, x2, y2);
+
+      // Dashed-style border via two paints
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = color.withOpacity(0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 6
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+
+      // Label
+      final tp = TextPainter(
+        text: TextSpan(
+          text: 'PERSON ${(box.confidence * 100).toStringAsFixed(0)}%',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final labelBg = Rect.fromLTWH(
+          x1,
+          (y1 - tp.height - 4).clamp(0, size.height),
+          tp.width + 12,
+          tp.height + 4);
+      canvas.drawRect(labelBg, Paint()..color = color.withOpacity(0.85));
+      tp.paint(canvas, Offset(labelBg.left + 6, labelBg.top + 2));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _PersonBoxPainter old) => old.boxes != boxes;
+}
+
 //  _AiStatusBadge
 
 class _AiStatusBadge extends StatelessWidget {
@@ -478,6 +566,154 @@ class _AiStatusBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _InfoOverlay — patient identity + live activity recognition output
+// ─────────────────────────────────────────────────────────────────────────────
+class _InfoOverlay extends StatelessWidget {
+  const _InfoOverlay();
+
+  Color _colorForActivity(String? activity) {
+    switch (activity) {
+      case 'FALL':
+      case 'CHEST_PAIN':
+        return const Color(0xFFFF5252); // red — alert
+      case 'WALK':
+        return const Color(0xFF00E676); // green
+      case 'SIT':
+        return const Color(0xFFFFAB40); // orange
+      case 'STAND':
+        return const Color(0xFF40C4FF); // light blue
+      case 'EAT':
+      case 'DRINK':
+        return const Color(0xFFFFD740); // yellow
+      case 'SLEEP':
+        return const Color(0xFF80DEEA); // cyan
+      case 'USE_PHONE':
+        return const Color(0xFFE040FB); // purple
+      default:
+        return Colors.white70;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<String>(
+      valueListenable: AppState.patientName,
+      builder: (_, name, __) => ValueListenableBuilder<ActivityResult>(
+        valueListenable: AppState.activityResult,
+        builder: (_, result, __) {
+          final hasActivity =
+              result.activity != null || result.bufferProgress > 0;
+          if (name.isEmpty && !hasActivity) return const SizedBox.shrink();
+          final actColor = _colorForActivity(result.activity);
+          final isBuffering = result.bufferProgress < result.bufferTarget;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.55),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (name.isNotEmpty)
+                  Row(children: [
+                    const Icon(Icons.person_pin,
+                        color: Color(0xFF00E676), size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Patient: $name',
+                      style: const TextStyle(
+                        color: Color(0xFF00E676),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ]),
+                if (hasActivity) ...[
+                  if (name.isNotEmpty) const SizedBox(height: 4),
+                  if (isBuffering)
+                    Row(children: [
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Collecting frames ${result.bufferProgress}/${result.bufferTarget}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ])
+                  else
+                    Row(children: [
+                      Icon(Icons.directions_run, color: actColor, size: 14),
+                      const SizedBox(width: 6),
+                      Text(
+                        result.activity == null
+                            ? 'UNCERTAIN  (${(result.confidence * 100).toStringAsFixed(1)}%)'
+                            : '${result.activity}  (${(result.confidence * 100).toStringAsFixed(1)}%)',
+                        style: TextStyle(
+                          color: actColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ]),
+                  if (result.fallAlert)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(children: const [
+                        Icon(Icons.warning_amber_rounded,
+                            color: Color(0xFFFF5252), size: 14),
+                        SizedBox(width: 6),
+                        Text(
+                          'FALL DETECTED',
+                          style: TextStyle(
+                            color: Color(0xFFFF5252),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ]),
+                    ),
+                  if (result.wandering)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(children: const [
+                        Icon(Icons.timeline,
+                            color: Color(0xFFFFAB40), size: 14),
+                        SizedBox(width: 6),
+                        Text(
+                          'WANDERING DETECTED',
+                          style: TextStyle(
+                            color: Color(0xFFFFAB40),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ]),
+                    ),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }
