@@ -149,8 +149,30 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     );
   }
 
-  void _changeType(Map<String, dynamic> rel, String newType) {
-    _load();
+  Future<void> _changeType(Map<String, dynamic> rel, String newType) async {
+    final patientId = AppState.patientId.value;
+    final requesterId = AppState.userId.value;
+    if (patientId == null || requesterId == null) return;
+
+    final relUser = rel['relative'] as Map<String, dynamic>? ?? rel;
+    final relativeId = relUser['id']?.toString();
+    if (relativeId == null) return;
+
+    try {
+      await ApiService.updateRelativeRole(
+        patientId: patientId,
+        requesterId: requesterId,
+        relativeId: relativeId,
+        role: newType,
+      );
+      _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to change role: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _removeRelative(Map<String, dynamic> rel) async {

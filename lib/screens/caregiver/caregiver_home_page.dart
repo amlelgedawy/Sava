@@ -77,12 +77,15 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<AlertType>(
-      valueListenable: AppState.alertStatus,
-      builder: (context, alert, _) {
-        return ValueListenableBuilder<int>(
-          valueListenable: AppState.heartRate,
-          builder: (context, bpm, _) {
+    return ValueListenableBuilder<String?>(
+      valueListenable: AppState.patientId,
+      builder: (context, _, __) {
+        return ValueListenableBuilder<AlertType>(
+          valueListenable: AppState.alertStatus,
+          builder: (context, alert, _) {
+            return ValueListenableBuilder<int>(
+              valueListenable: AppState.heartRate,
+              builder: (context, bpm, _) {
             final isEmergency =
                 alert != AlertType.none || bpm == 0 || bpm > 120;
 
@@ -495,6 +498,8 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                   const SizedBox(height: 24),
                 ],
               ),
+            );
+              },
             );
           },
         );

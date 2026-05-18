@@ -33,9 +33,6 @@ class _VisionPageState extends State<VisionPage> {
   bool _isSending = false;
   static const Duration _frameInterval = Duration(seconds: 2);
 
-  double _videoWidth = 1.0;
-  double _videoHeight = 1.0;
-
   @override
   void initState() {
     super.initState();
@@ -52,10 +49,6 @@ class _VisionPageState extends State<VisionPage> {
       );
       await _controller!.initialize();
       if (!mounted) return;
-      // previewSize is always landscape (sensor orientation); swap for portrait display
-      final ps = _controller!.value.previewSize;
-      _videoWidth = ps != null ? ps.height : 480;
-      _videoHeight = ps != null ? ps.width : 640;
       setState(() => _cameraReady = true);
       _startFrameLoop();
     } catch (_) {
@@ -120,11 +113,7 @@ class _VisionPageState extends State<VisionPage> {
                 builder: (context, objects, _) {
                   if (objects.isEmpty) return const SizedBox();
                   return CustomPaint(
-                    painter: _ObjectBoxPainter(
-                      objects: objects,
-                      videoWidth: _videoWidth,
-                      videoHeight: _videoHeight,
-                    ),
+                    painter: _ObjectBoxPainter(objects: objects),
                   );
                 },
               ),
@@ -138,11 +127,7 @@ class _VisionPageState extends State<VisionPage> {
                 builder: (context, faces, _) {
                   if (faces.isEmpty) return const SizedBox();
                   return CustomPaint(
-                    painter: _FaceBoxPainter(
-                      faces: faces,
-                      videoWidth: _videoWidth,
-                      videoHeight: _videoHeight,
-                    ),
+                    painter: _FaceBoxPainter(faces: faces),
                   );
                 },
               ),
@@ -253,31 +238,18 @@ class _VisionPageState extends State<VisionPage> {
 // ─────────────────────────────────────────────────────────────────────────────
 class _ObjectBoxPainter extends CustomPainter {
   final List<DetectedObject> objects;
-  final double videoWidth;
-  final double videoHeight;
 
-  const _ObjectBoxPainter({
-    required this.objects,
-    required this.videoWidth,
-    required this.videoHeight,
-  });
+  const _ObjectBoxPainter({required this.objects});
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Use contain scaling so boxes align with the CameraPreview
-    final double scaleX = size.width / videoWidth;
-    final double scaleY = size.height / videoHeight;
-    final double scale = scaleX < scaleY ? scaleX : scaleY;
-    final double offsetX = (size.width - videoWidth * scale) / 2;
-    final double offsetY = (size.height - videoHeight * scale) / 2;
-
     const color = Color(0xFFFF1744);
 
     for (final obj in objects) {
-      final double x1 = obj.left * videoWidth * scale + offsetX;
-      final double y1 = obj.top * videoHeight * scale + offsetY;
-      final double x2 = obj.right * videoWidth * scale + offsetX;
-      final double y2 = obj.bottom * videoHeight * scale + offsetY;
+      final double x1 = obj.left * size.width;
+      final double y1 = obj.top * size.height;
+      final double x2 = obj.right * size.width;
+      final double y2 = obj.bottom * size.height;
       final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
 
       // Glow
@@ -353,9 +325,7 @@ class _ObjectBoxPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ObjectBoxPainter old) =>
-      old.objects != objects ||
-      old.videoWidth != videoWidth ||
-      old.videoHeight != videoHeight;
+      old.objects != objects;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -363,31 +333,19 @@ class _ObjectBoxPainter extends CustomPainter {
 // ─────────────────────────────────────────────────────────────────────────────
 class _FaceBoxPainter extends CustomPainter {
   final List<DetectedFace> faces;
-  final double videoWidth;
-  final double videoHeight;
 
-  const _FaceBoxPainter({
-    required this.faces,
-    required this.videoWidth,
-    required this.videoHeight,
-  });
+  const _FaceBoxPainter({required this.faces});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double scaleX = size.width / videoWidth;
-    final double scaleY = size.height / videoHeight;
-    final double scale = scaleX < scaleY ? scaleX : scaleY;
-    final double offsetX = (size.width - videoWidth * scale) / 2;
-    final double offsetY = (size.height - videoHeight * scale) / 2;
-
     for (final face in faces) {
       final color =
           face.isKnown ? const Color(0xFF00E676) : const Color(0xFFFF1744);
 
-      final double x1 = face.left * videoWidth * scale + offsetX;
-      final double y1 = face.top * videoHeight * scale + offsetY;
-      final double x2 = face.right * videoWidth * scale + offsetX;
-      final double y2 = face.bottom * videoHeight * scale + offsetY;
+      final double x1 = face.left * size.width;
+      final double y1 = face.top * size.height;
+      final double x2 = face.right * size.width;
+      final double y2 = face.bottom * size.height;
       final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
 
       // Glow
@@ -462,10 +420,7 @@ class _FaceBoxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _FaceBoxPainter old) =>
-      old.faces != faces ||
-      old.videoWidth != videoWidth ||
-      old.videoHeight != videoHeight;
+  bool shouldRepaint(covariant _FaceBoxPainter old) => old.faces != faces;
 }
 
 //  _AiStatusBadge

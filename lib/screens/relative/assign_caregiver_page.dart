@@ -196,34 +196,12 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: SovaColors.softGlass,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(Icons.arrow_back,
-                          color: SovaColors.charcoal, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('RELATIVE',
-                            style: SovaTheme.textTheme.labelMedium),
-                        const SizedBox(height: 8),
-                        Text('Caregiver',
-                            style: SovaTheme.textTheme.displayMedium),
-                      ],
-                    ),
-                  ),
+                  Text('RELATIVE', style: SovaTheme.textTheme.labelMedium),
+                  const SizedBox(height: 8),
+                  Text('Caregiver', style: SovaTheme.textTheme.displayMedium),
                 ],
               ),
               const SizedBox(height: 24),

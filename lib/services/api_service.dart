@@ -404,6 +404,22 @@ class ApiService {
     throw (json.decode(resp.body) as Map)['detail'] ?? 'Reject failed';
   }
 
+  /// PATCH /api/patients/<patient_id>/relatives/<relative_id>/role  body: {requester_id, role}
+  static Future<void> updateRelativeRole({
+    required String patientId,
+    required String requesterId,
+    required String relativeId,
+    required String role,
+  }) async {
+    final resp = await http.patch(
+      Uri.parse('$_baseUrl/patients/$patientId/relatives/$relativeId/role'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'requester_id': requesterId, 'role': role}),
+    );
+    if (resp.statusCode == 200) return;
+    throw (json.decode(resp.body) as Map)['detail'] ?? 'Role change failed';
+  }
+
   /// PATCH /api/admin/patients/<patient_id>/relatives/<relative_id>/role  body: {admin_id, role}
   static Future<void> adminChangeRelativeRole({
     required String adminId,

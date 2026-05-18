@@ -82,6 +82,7 @@ class _ContractManagementPageState extends State<ContractManagementPage> {
           const SnackBar(content: Text('Contract accepted')),
         );
         _loadContracts();
+        AppState.currentNavIndex.value = 0;
       }
     } catch (e) {
       if (mounted) {
@@ -315,14 +316,21 @@ class _ActiveContractCard extends StatelessWidget {
           OutlinedButton(
             onPressed: onEnd,
             style: OutlinedButton.styleFrom(
-              side: BorderSide(color: SovaColors.danger),
+              side: const BorderSide(color: SovaColors.danger, width: 1.5),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              minimumSize: const Size(double.infinity, 56),
             ),
-            child: const Text('End Contract',
-                style: TextStyle(color: SovaColors.danger)),
+            child: const Text(
+              'End Contract',
+              style: TextStyle(
+                color: SovaColors.danger,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
           ),
         ],
       ),
