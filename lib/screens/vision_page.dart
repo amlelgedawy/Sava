@@ -52,8 +52,10 @@ class _VisionPageState extends State<VisionPage> {
       );
       await _controller!.initialize();
       if (!mounted) return;
-      _videoWidth = _controller!.value.previewSize?.width ?? 640;
-      _videoHeight = _controller!.value.previewSize?.height ?? 480;
+      // previewSize is always landscape (sensor orientation); swap for portrait display
+      final ps = _controller!.value.previewSize;
+      _videoWidth = ps != null ? ps.height : 480;
+      _videoHeight = ps != null ? ps.width : 640;
       setState(() => _cameraReady = true);
       _startFrameLoop();
     } catch (_) {
@@ -262,24 +264,19 @@ class _ObjectBoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double videoAspect = videoWidth / videoHeight;
-    final double screenAspect = size.width / size.height;
-
-    double scale, offsetX = 0, offsetY = 0;
-    if (videoAspect > screenAspect) {
-      scale = size.height / videoHeight;
-      offsetX = (size.width - videoWidth * scale) / 2;
-    } else {
-      scale = size.width / videoWidth;
-      offsetY = (size.height - videoHeight * scale) / 2;
-    }
+    // Use contain scaling so boxes align with the CameraPreview
+    final double scaleX = size.width / videoWidth;
+    final double scaleY = size.height / videoHeight;
+    final double scale = scaleX < scaleY ? scaleX : scaleY;
+    final double offsetX = (size.width - videoWidth * scale) / 2;
+    final double offsetY = (size.height - videoHeight * scale) / 2;
 
     const color = Color(0xFFFF1744);
 
     for (final obj in objects) {
-      final double x1 = (1.0 - obj.right) * videoWidth * scale + offsetX;
+      final double x1 = obj.left * videoWidth * scale + offsetX;
       final double y1 = obj.top * videoHeight * scale + offsetY;
-      final double x2 = (1.0 - obj.left) * videoWidth * scale + offsetX;
+      final double x2 = obj.right * videoWidth * scale + offsetX;
       final double y2 = obj.bottom * videoHeight * scale + offsetY;
       final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
 
@@ -377,26 +374,19 @@ class _FaceBoxPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double videoAspect = videoWidth / videoHeight;
-    final double screenAspect = size.width / size.height;
-
-    double scale, offsetX = 0, offsetY = 0;
-    if (videoAspect > screenAspect) {
-      scale = size.height / videoHeight;
-      offsetX = (size.width - videoWidth * scale) / 2;
-    } else {
-      scale = size.width / videoWidth;
-      offsetY = (size.height - videoHeight * scale) / 2;
-    }
+    final double scaleX = size.width / videoWidth;
+    final double scaleY = size.height / videoHeight;
+    final double scale = scaleX < scaleY ? scaleX : scaleY;
+    final double offsetX = (size.width - videoWidth * scale) / 2;
+    final double offsetY = (size.height - videoHeight * scale) / 2;
 
     for (final face in faces) {
-      // Green for known, red for unknown
       final color =
           face.isKnown ? const Color(0xFF00E676) : const Color(0xFFFF1744);
 
-      final double x1 = (1.0 - face.right) * videoWidth * scale + offsetX;
+      final double x1 = face.left * videoWidth * scale + offsetX;
       final double y1 = face.top * videoHeight * scale + offsetY;
-      final double x2 = (1.0 - face.left) * videoWidth * scale + offsetX;
+      final double x2 = face.right * videoWidth * scale + offsetX;
       final double y2 = face.bottom * videoHeight * scale + offsetY;
       final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
 

@@ -12,7 +12,7 @@ import '../../app_state.dart';
 import '../../models/user_models.dart';
 import '../../services/api_service.dart';
 import '../../services/database_service.dart';
-import '../caregiver/caregiver_wrapper.dart';
+import '../login_page.dart';
 
 class CaregiverSignupPage extends StatefulWidget {
   const CaregiverSignupPage({super.key});
@@ -477,18 +477,34 @@ class _CaregiverSignupPageState extends State<CaregiverSignupPage> {
                 textAlign: TextAlign.center),
             const SizedBox(height: 12),
             Text(
-              'Your CV is under review. You can use the app while your credentials are being verified.',
+              'Your CV is under review. Please wait for admin approval before logging in.',
               style: TextStyle(color: SovaColors.sage, height: 1.6),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 48),
-            _primaryBtn('Enter App', () {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const CaregiverWrapper()),
-                (_) => false,
-              );
-            }),
+            GestureDetector(
+              onTap: () {
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginPage()),
+                  (_) => false,
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                height: 56,
+                decoration: BoxDecoration(
+                    color: SovaColors.navy,
+                    borderRadius: BorderRadius.circular(28)),
+                child: const Center(
+                  child: Text('Back to Login',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16)),
+                ),
+              ),
+            ),
           ],
         ).animate().fadeIn(delay: 100.ms),
       ),

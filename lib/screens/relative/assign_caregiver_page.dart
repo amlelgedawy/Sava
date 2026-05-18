@@ -13,8 +13,10 @@ class AssignCaregiverPage extends StatefulWidget {
 class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
   Map<String, dynamic>? _currentCaregiver;
   String? _activeContractId;
-  List<Map<String, dynamic>> _available = [];
+  List<Map<String, dynamic>> _availableCaregivers = [];
+  Set<String> _pendingCaregiverIds = {};
   bool _loading = true;
+  bool _sendingOffer = false;
   bool _isPrimary = false;
 
   @override
@@ -71,7 +73,33 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
       // Only load available caregivers if no current one
       if (_currentCaregiver == null) {
         final caregivers = await ApiService.getAvailableCaregivers();
-        _available = caregivers.cast<Map<String, dynamic>>();
+        _availableCaregivers = caregivers.cast<Map<String, dynamic>>();
+
+        // Check which caregivers have pending offers for this patient
+        final patientId = AppState.patientId.value;
+        if (patientId != null) {
+          final pendingSet = <String>{};
+          for (final cg in _availableCaregivers) {
+            final cgId = cg['id']?.toString();
+            if (cgId != null) {
+              try {
+                final contracts = await ApiService.getCaregiverContracts(
+                  caregiverId: cgId,
+                  status: 'PENDING',
+                );
+                for (final c in contracts) {
+                  final contractPatientId = (c['patient_id']?.toString() ??
+                      c['patient']?['id']?.toString());
+                  if (contractPatientId == patientId) {
+                    pendingSet.add(cgId);
+                    break;
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+          if (mounted) setState(() => _pendingCaregiverIds = pendingSet);
+        }
       }
 
       if (mounted) setState(() => _loading = false);
@@ -81,9 +109,12 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
   }
 
   Future<void> _assign(String caregiverId) async {
+    if (_sendingOffer) return; // Prevent duplicate taps
     final patientId = AppState.patientId.value;
     final requesterId = AppState.userId.value;
     if (patientId == null || requesterId == null) return;
+
+    setState(() => _sendingOffer = true);
     try {
       await ApiService.sendCaregiverOffer(
         patientId: patientId,
@@ -102,6 +133,8 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
           SnackBar(content: Text(e.toString())),
         );
       }
+    } finally {
+      if (mounted) setState(() => _sendingOffer = false);
     }
   }
 
@@ -222,19 +255,26 @@ class _AssignCaregiverPageState extends State<AssignCaregiverPage> {
                   style: TextStyle(color: SovaColors.sage, fontSize: 13),
                 ),
                 const SizedBox(height: 16),
-                if (_available.isEmpty)
+                if (_availableCaregivers.isEmpty)
                   _emptyState('No available caregivers at the moment')
                 else
                   ListView.separated(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _available.length,
+                    itemCount: _availableCaregivers.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (_, i) => _CaregiverCard(
-                      caregiver: _available[i],
-                      canAssign: _isPrimary,
-                      onAssign: () => _assign(_available[i]['id'].toString()),
-                    ).animate().fadeIn(delay: (i * 80).ms).slideY(begin: 0.1),
+                    itemBuilder: (_, i) {
+                      final cg = _availableCaregivers[i];
+                      final cgId = cg['id']?.toString() ?? '';
+                      final isPending = _pendingCaregiverIds.contains(cgId);
+                      return _CaregiverCard(
+                        caregiver: cg,
+                        canAssign: _isPrimary && !isPending,
+                        isPending: isPending,
+                        isSending: _sendingOffer,
+                        onAssign: () => _assign(cgId),
+                      ).animate().fadeIn(delay: (i * 80).ms).slideY(begin: 0.1);
+                    },
                   ),
               ],
             ],
@@ -373,10 +413,14 @@ class _CurrentCaregiverCard extends StatelessWidget {
 class _CaregiverCard extends StatelessWidget {
   final Map<String, dynamic> caregiver;
   final bool canAssign;
+  final bool isPending;
+  final bool isSending;
   final VoidCallback onAssign;
   const _CaregiverCard(
       {required this.caregiver,
       required this.canAssign,
+      this.isPending = false,
+      this.isSending = false,
       required this.onAssign});
 
   @override
@@ -411,19 +455,42 @@ class _CaregiverCard extends StatelessWidget {
             ),
           ]),
         ),
-        if (canAssign)
+        if (isPending)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+                color: SovaColors.navy.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border:
+                    Border.all(color: SovaColors.navy.withValues(alpha: 0.3))),
+            child: const Text('Pending Approval',
+                style: TextStyle(
+                    color: SovaColors.navy,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12)),
+          )
+        else if (canAssign)
           GestureDetector(
-            onTap: onAssign,
+            onTap: isSending ? null : onAssign,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                  color: SovaColors.navy,
+                  color: isSending
+                      ? SovaColors.navy.withValues(alpha: 0.5)
+                      : SovaColors.navy,
                   borderRadius: BorderRadius.circular(20)),
-              child: const Text('Assign',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
+              child: isSending
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Assign',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13)),
             ),
           ),
       ]),

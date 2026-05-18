@@ -39,40 +39,12 @@ class _PatientListPageState extends State<PatientListPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: SovaColors.softGlass,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Icon(Icons.arrow_back,
-                          color: SovaColors.charcoal, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('CAREGIVER',
-                            style: SovaTheme.textTheme.labelMedium),
-                        const SizedBox(height: 8),
-                        Text('My Patients',
-                            style: SovaTheme.textTheme.displayMedium),
-                        Text(
-                          '${_patients.length}/4 patients assigned',
-                          style:
-                              TextStyle(color: SovaColors.sage, fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Text('CAREGIVER', style: SovaTheme.textTheme.labelMedium),
+              const SizedBox(height: 8),
+              Text('My Patients', style: SovaTheme.textTheme.displayMedium),
+              Text(
+                '${_patients.length}/4 patients assigned',
+                style: TextStyle(color: SovaColors.sage, fontSize: 14),
               ),
               const SizedBox(height: 32),
               Expanded(
@@ -195,26 +167,48 @@ class _PatientCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: () {
-                      AppState.patientId.value = patient['id'].toString();
-                      AppState.patientName.value =
-                          patient['name'] as String? ?? '';
-                      AppState.currentNavIndex.value = 0;
+                  ValueListenableBuilder<String?>(
+                    valueListenable: AppState.patientId,
+                    builder: (_, currentPatientId, __) {
+                      final isMonitoring =
+                          currentPatientId == patient['id'].toString();
+                      if (isMonitoring) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: SovaColors.sensorNeutral,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text('Monitoring',
+                              style: TextStyle(
+                                  color: Colors.black38,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold)),
+                        );
+                      }
+                      return GestureDetector(
+                        onTap: () {
+                          AppState.patientId.value = patient['id'].toString();
+                          AppState.patientName.value =
+                              patient['name'] as String? ?? '';
+                          AppState.currentNavIndex.value = 0;
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: SovaColors.navy,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text('Monitor',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold)),
+                        ),
+                      );
                     },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: SovaColors.navy,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text('Monitor',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold)),
-                    ),
                   ),
                 ],
               ),

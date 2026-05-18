@@ -52,8 +52,6 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
 
   void _showAddDialog() {
     final nameCtrl = TextEditingController();
-    final emailCtrl = TextEditingController();
-    final passCtrl = TextEditingController();
     String? error;
 
     showModalBottomSheet(
@@ -91,17 +89,11 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                         color: SovaColors.charcoal)),
                 const SizedBox(height: 6),
                 const Text(
-                  'They will receive login credentials by email.',
+                  'Enter the username of an existing user account.',
                   style: TextStyle(color: SovaColors.sage, fontSize: 13),
                 ),
                 const SizedBox(height: 20),
-                _sheetField(nameCtrl, 'Full Name', Icons.person_outline),
-                const SizedBox(height: 12),
-                _sheetField(emailCtrl, 'Email', Icons.email_outlined,
-                    type: TextInputType.emailAddress),
-                const SizedBox(height: 12),
-                _sheetField(passCtrl, 'Temporary Password', Icons.lock_outline,
-                    obscure: true),
+                _sheetField(nameCtrl, 'Username', Icons.person_outline),
                 if (error != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -112,10 +104,8 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                 const SizedBox(height: 20),
                 GestureDetector(
                   onTap: () async {
-                    if (nameCtrl.text.isEmpty ||
-                        emailCtrl.text.isEmpty ||
-                        passCtrl.text.isEmpty) {
-                      setModal(() => error = 'Please fill all fields');
+                    if (nameCtrl.text.isEmpty) {
+                      setModal(() => error = 'Please enter a username');
                       return;
                     }
                     final patientId = AppState.patientId.value;
@@ -128,7 +118,10 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                         username: nameCtrl.text.trim(),
                         roleType: 'SECONDARY',
                       );
-                    } catch (_) {}
+                    } catch (_) {
+                      setModal(() => error = 'User not found or already added');
+                      return;
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                     _load();
                   },
@@ -197,23 +190,10 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: SovaColors.softGlass,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(Icons.arrow_back,
-                        color: SovaColors.charcoal, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('RELATIVE', style: SovaTheme.textTheme.labelMedium),
@@ -224,21 +204,21 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
                                 color: SovaColors.sage, fontSize: 14)),
                     ],
                   ),
-                ),
-                if (_isPrimary)
-                  GestureDetector(
-                    onTap: _showAddDialog,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                          color: SovaColors.coral,
-                          borderRadius: BorderRadius.circular(16)),
-                      child: const Icon(Icons.person_add_outlined,
-                          color: Colors.white),
+                  if (_isPrimary)
+                    GestureDetector(
+                      onTap: _showAddDialog,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                            color: SovaColors.coral,
+                            borderRadius: BorderRadius.circular(16)),
+                        child: const Icon(Icons.person_add_outlined,
+                            color: Colors.white),
+                      ),
                     ),
-                  ),
-              ]),
+                ],
+              ),
               const SizedBox(height: 28),
               Expanded(
                 child: _loading
@@ -279,13 +259,14 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
 
   Widget _emptyState() => Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.group_outlined, size: 64, color: SovaColors.sensorNeutral),
+          const Icon(Icons.group_outlined,
+              size: 64, color: SovaColors.sensorNeutral),
           const SizedBox(height: 16),
-          Text('No relatives added yet',
+          const Text('No current family members',
               style: TextStyle(
                   color: SovaColors.sage, fontWeight: FontWeight.w600)),
           if (_isPrimary)
-            Text('Tap + to add a secondary relative',
+            const Text('Tap + to add a secondary relative',
                 style: TextStyle(color: SovaColors.sage, fontSize: 13)),
         ]),
       );
@@ -295,7 +276,6 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
     String hint,
     IconData icon, {
     TextInputType? type,
-    bool obscure = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -303,7 +283,6 @@ class _ManageRelativesPageState extends State<ManageRelativesPage> {
       child: TextField(
         controller: ctrl,
         keyboardType: type,
-        obscureText: obscure,
         decoration: InputDecoration(
           hintText: hint,
           prefixIcon: Icon(icon, color: SovaColors.sage),

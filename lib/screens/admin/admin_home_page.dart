@@ -3,6 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../theme.dart';
 import '../../app_state.dart';
 import '../../services/api_service.dart';
+import '../../services/database_service.dart';
+import '../auth/landing_page.dart';
 
 class AdminHomePage extends StatefulWidget {
   const AdminHomePage({super.key});
@@ -19,6 +21,48 @@ class _AdminHomePageState extends State<AdminHomePage> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Logout',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: SovaColors.charcoal)),
+        content: const Text('Are you sure you want to logout?',
+            style: TextStyle(color: Colors.black54)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.black38)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              DatabaseService.stopAlertPolling();
+              AppState.userId.value = null;
+              AppState.caregiverId.value = null;
+              AppState.patientId.value = null;
+              AppState.currentUser.value = null;
+              AppState.userRole.value = null;
+              AppState.caregiverName.value = 'User';
+              AppState.isLoggedIn.value = false;
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LandingPage()),
+                (_) => false,
+              );
+            },
+            child: const Text('Logout',
+                style: TextStyle(
+                    color: SovaColors.danger, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -50,9 +94,19 @@ class _AdminHomePageState extends State<AdminHomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
+                      const SizedBox(height: 8),
+                      Text('Dashboard',
+                          style: SovaTheme.textTheme.displayMedium),
+                    ],
+                  ),
                   GestureDetector(
-                    onTap: () => Navigator.pop(context),
+                    onTap: _showLogoutDialog,
                     child: Container(
                       width: 40,
                       height: 40,
@@ -60,20 +114,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
                         color: SovaColors.softGlass,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.arrow_back,
+                      child: const Icon(Icons.logout_rounded,
                           color: SovaColors.charcoal, size: 18),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
-                        const SizedBox(height: 8),
-                        Text('Dashboard',
-                            style: SovaTheme.textTheme.displayMedium),
-                      ],
                     ),
                   ),
                 ],

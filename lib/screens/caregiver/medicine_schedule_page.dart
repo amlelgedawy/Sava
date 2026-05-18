@@ -29,6 +29,13 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
   void initState() {
     super.initState();
     _checkIfPrimaryRelative();
+    AppState.patientId.addListener(_checkIfPrimaryRelative);
+  }
+
+  @override
+  void dispose() {
+    AppState.patientId.removeListener(_checkIfPrimaryRelative);
+    super.dispose();
   }
 
   Future<void> _checkIfPrimaryRelative() async {
@@ -45,7 +52,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
         final relId = relUser['id']?.toString();
         final roleType = (rel['role_type'] as String? ?? '').toUpperCase();
         if (relId == myId && roleType == 'PRIMARY') {
-          setState(() => _isPrimaryRelative = true);
+          if (mounted) setState(() => _isPrimaryRelative = true);
           return;
         }
       }
@@ -171,6 +178,27 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
     );
   }
 
+  Widget _noPatientState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.person_off_outlined,
+              size: 64, color: SovaColors.sensorNeutral),
+          const SizedBox(height: 16),
+          const Text('No patient assigned',
+              style: TextStyle(
+                  color: SovaColors.sage, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          const Text(
+              'Select a patient from the Patients tab to manage their medication schedule',
+              style: TextStyle(color: SovaColors.sage, fontSize: 13),
+              textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
   void _deleteMed(int index) {
     final updated = List<Medication>.from(AppState.allMedications.value);
     updated.removeAt(index);
@@ -195,33 +223,17 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: SovaColors.softGlass,
-                      borderRadius: BorderRadius.circular(14),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _isReadOnly ? 'RELATIVE' : 'CAREGIVER',
+                      style: SovaTheme.textTheme.labelMedium,
                     ),
-                    child: const Icon(Icons.arrow_back,
-                        color: SovaColors.charcoal, size: 18),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _isReadOnly ? 'RELATIVE' : 'CAREGIVER',
-                        style: SovaTheme.textTheme.labelMedium,
-                      ),
-                      Text('Medicine Schedule',
-                          style: SovaTheme.textTheme.displayMedium),
-                    ],
-                  ),
+                    Text('Medicine Schedule',
+                        style: SovaTheme.textTheme.displayMedium),
+                  ],
                 ),
                 if (_isReadOnly)
                   Container(
@@ -245,62 +257,92 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                     ]),
                   )
                 else
-                  GestureDetector(
-                    onTap: _showAddDialog,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                          color: SovaColors.navy,
-                          borderRadius: BorderRadius.circular(16)),
-                      child: const Icon(Icons.add, color: Colors.white),
-                    ),
+                  ValueListenableBuilder<String?>(
+                    valueListenable: AppState.patientId,
+                    builder: (_, patientId, __) {
+                      final hasPatient =
+                          patientId != null && patientId.isNotEmpty;
+                      if (!hasPatient) return const SizedBox.shrink();
+                      return GestureDetector(
+                        onTap: _showAddDialog,
+                        child: Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                              color: SovaColors.navy,
+                              borderRadius: BorderRadius.circular(16)),
+                          child: const Icon(Icons.add, color: Colors.white),
+                        ),
+                      );
+                    },
                   ),
               ]),
               const SizedBox(height: 8),
-              ValueListenableBuilder<String>(
-                valueListenable: AppState.patientName,
-                builder: (_, name, __) => Text(
-                  'Patient: $name',
-                  style: const TextStyle(color: SovaColors.sage, fontSize: 14),
-                ),
+              ValueListenableBuilder<String?>(
+                valueListenable: AppState.patientId,
+                builder: (_, patientId, __) {
+                  final hasPatient = patientId != null && patientId.isNotEmpty;
+                  if (!hasPatient) return const SizedBox.shrink();
+                  return ValueListenableBuilder<String>(
+                    valueListenable: AppState.patientName,
+                    builder: (_, name, __) => Text(
+                      'Patient: $name',
+                      style: const TextStyle(
+                          color: SovaColors.sage, fontSize: 14),
+                    ),
+                  );
+                },
               ),
               const SizedBox(height: 28),
               Expanded(
-                child: ValueListenableBuilder<List<Medication>>(
-                  valueListenable: AppState.allMedications,
-                  builder: (_, meds, __) {
-                    if (meds.isEmpty) {
-                      return Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.medication_outlined,
-                                size: 64, color: SovaColors.sensorNeutral),
-                            const SizedBox(height: 16),
-                            const Text('No medications added',
-                                style: TextStyle(
-                                    color: SovaColors.sage,
-                                    fontWeight: FontWeight.w600)),
-                            if (!_isReadOnly) ...[
-                              const SizedBox(height: 8),
-                              const Text('Tap + to add a medication',
-                                  style: TextStyle(
-                                      color: SovaColors.sage, fontSize: 13)),
-                            ],
-                          ],
-                        ),
-                      );
-                    }
-                    return ListView.separated(
-                      itemCount: meds.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (_, i) => _MedCard(
-                        med: meds[i],
-                        readOnly: _isReadOnly,
-                        onToggle: () => _toggleTaken(i),
-                        onDelete: () => _deleteMed(i),
-                      ).animate().fadeIn(delay: (i * 60).ms).slideY(begin: 0.1),
+                child: ValueListenableBuilder<String?>(
+                  valueListenable: AppState.patientId,
+                  builder: (_, patientId, __) {
+                    final hasPatient = patientId != null && patientId.isNotEmpty;
+                    if (!hasPatient) return _noPatientState();
+                    return ValueListenableBuilder<List<Medication>>(
+                      valueListenable: AppState.allMedications,
+                      builder: (_, meds, __) {
+                        if (meds.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.medication_outlined,
+                                    size: 64,
+                                    color: SovaColors.sensorNeutral),
+                                const SizedBox(height: 16),
+                                const Text('No medications added',
+                                    style: TextStyle(
+                                        color: SovaColors.sage,
+                                        fontWeight: FontWeight.w600)),
+                                if (!_isReadOnly) ...[
+                                  const SizedBox(height: 8),
+                                  const Text(
+                                      'Tap + to add a medication',
+                                      style: TextStyle(
+                                          color: SovaColors.sage,
+                                          fontSize: 13)),
+                                ],
+                              ],
+                            ),
+                          );
+                        }
+                        return ListView.separated(
+                          itemCount: meds.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (_, i) => _MedCard(
+                            med: meds[i],
+                            readOnly: _isReadOnly,
+                            onToggle: () => _toggleTaken(i),
+                            onDelete: () => _deleteMed(i),
+                          )
+                              .animate()
+                              .fadeIn(delay: (i * 60).ms)
+                              .slideY(begin: 0.1),
+                        );
+                      },
                     );
                   },
                 ),

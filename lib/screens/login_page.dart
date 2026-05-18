@@ -53,6 +53,18 @@ class _LoginPageState extends State<LoginPage> {
       AppState.caregiverName.value = name;
 
       if (role == 'CAREGIVER') {
+        final salary = data['salary_per_hour'];
+        final isApproved =
+            salary != null && salary != 0 && salary.toString() != '0';
+        if (!isApproved) {
+          if (!mounted) return;
+          setState(() {
+            _error =
+                'Your application is pending admin approval. Please wait for admin review.';
+            _loading = false;
+          });
+          return;
+        }
         AppState.userRole.value = UserRole.caregiver;
         AppState.caregiverId.value = id;
         final patients = await ApiService.getPatientsForCaregiver(id);

@@ -8,10 +8,7 @@ import '../../models/patient_models.dart';
 import '../../services/api_service.dart';
 import '../../services/database_service.dart';
 import '../vision_page.dart';
-import '../activity_timeline_page.dart';
-import '../alerts_page.dart';
 import '../auth/landing_page.dart';
-import 'medicine_schedule_page.dart';
 
 class CaregiverHomePage extends StatefulWidget {
   const CaregiverHomePage({super.key});
@@ -53,15 +50,21 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
               AppState.userId.value = null;
               AppState.caregiverId.value = null;
               AppState.patientId.value = null;
+              AppState.patientName.value = '';
               AppState.currentUser.value = null;
               AppState.userRole.value = null;
               AppState.caregiverName.value = 'User';
               AppState.isLoggedIn.value = false;
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (_) => const LandingPage()),
-                (_) => false,
-              );
+              AppState.currentNavIndex.value = 0;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (context.mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LandingPage()),
+                    (_) => false,
+                  );
+                }
+              });
             },
             child: const Text('Logout',
                 style: TextStyle(
@@ -120,6 +123,8 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                                   'Hi, $name',
                                   style: SovaTheme.textTheme.displayMedium
                                       ?.copyWith(fontSize: 26),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -204,10 +209,7 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
 
                     // ── Alert Status Banner ────────────────────────────────
                     InteractiveBentoCard(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AlertsPage()),
-                      ),
+                      onTap: () => AppState.currentNavIndex.value = 5,
                       color: isEmergency ? SovaColors.danger : Colors.white,
                       height: 90,
                       child: Padding(
@@ -262,11 +264,7 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                             : 'Waiting...';
 
                         return InteractiveBentoCard(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ActivityTimelinePage()),
-                          ),
+                          onTap: () => AppState.currentNavIndex.value = 3,
                           color: color,
                           height: 120,
                           child: Padding(
@@ -332,11 +330,7 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                               }
                             }
                             return InteractiveBentoCard(
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => const MedicineSchedulePage()),
-                              ),
+                              onTap: () => AppState.currentNavIndex.value = 4,
                               color: const Color(0xFFE83E8C),
                               height: 130,
                               child: Padding(
@@ -448,11 +442,7 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
 
                     // ── Activity Timeline Card ─────────────────────────────
                     InteractiveBentoCard(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const ActivityTimelinePage()),
-                      ),
+                      onTap: () => AppState.currentNavIndex.value = 3,
                       color: const Color(0xFF8DA399),
                       height: 120,
                       child: const Padding(

@@ -43,6 +43,9 @@ class _UserManagementPageState extends State<UserManagementPage>
     }
   }
 
+  List<Map<String, dynamic>> get _nonAdmins => _all
+      .where((u) => (u['role'] as String? ?? '').toUpperCase() != 'ADMIN')
+      .toList();
   List<Map<String, dynamic>> get _caregivers => _all
       .where((u) => (u['role'] as String? ?? '').toUpperCase() == 'CAREGIVER')
       .toList();
@@ -95,39 +98,11 @@ class _UserManagementPageState extends State<UserManagementPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: SovaColors.softGlass,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(Icons.arrow_back,
-                              color: SovaColors.charcoal, size: 18),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('ADMIN',
-                                style: SovaTheme.textTheme.labelMedium),
-                            Text('Users',
-                                style: SovaTheme.textTheme.displayMedium),
-                            Text(
-                                '${_loading ? '...' : _all.length} registered users',
-                                style: TextStyle(
-                                    color: SovaColors.sage, fontSize: 14)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                  Text('ADMIN', style: SovaTheme.textTheme.labelMedium),
+                  Text('Users', style: SovaTheme.textTheme.displayMedium),
+                  Text(
+                      '${_loading ? '...' : _nonAdmins.length} registered users',
+                      style: TextStyle(color: SovaColors.sage, fontSize: 14)),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -140,7 +115,7 @@ class _UserManagementPageState extends State<UserManagementPage>
               indicatorColor: SovaColors.navy,
               indicatorSize: TabBarIndicatorSize.label,
               tabs: [
-                Tab(text: 'All (${_all.length})'),
+                Tab(text: 'All (${_nonAdmins.length})'),
                 Tab(text: 'Caregivers (${_caregivers.length})'),
                 Tab(text: 'Relatives (${_relatives.length})'),
               ],
@@ -151,7 +126,7 @@ class _UserManagementPageState extends State<UserManagementPage>
                   : TabBarView(
                       controller: _tabs,
                       children: [
-                        _userList(_all),
+                        _userList(_nonAdmins),
                         _userList(_caregivers),
                         _userList(_relatives),
                       ],

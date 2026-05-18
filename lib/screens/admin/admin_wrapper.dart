@@ -22,17 +22,19 @@ class _AdminWrapperState extends State<AdminWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          IndexedStack(index: _index, children: _pages),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: _bottomNav(),
+    return PopScope(
+        canPop: false,
+        child: Scaffold(
+          body: Stack(
+            children: [
+              IndexedStack(index: _index, children: _pages),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _bottomNav(),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ));
   }
 
   Widget _bottomNav() {
@@ -72,8 +74,9 @@ class _AdminWrapperState extends State<AdminWrapper> {
         duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color:
-              active ? SovaColors.sage.withValues(alpha: 0.2) : Colors.transparent,
+          color: active
+              ? SovaColors.sage.withValues(alpha: 0.2)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(25),
         ),
         child: Row(children: [
