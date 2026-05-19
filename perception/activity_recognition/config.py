@@ -1,8 +1,11 @@
+import os as _os
 
 # Camera Settings
-# Pi + IP Webcam app: CAMERA_INDEX = "http://<phone-ip>:8080/video"
-# Laptop dev (local webcam): CAMERA_INDEX = 0
-CAMERA_INDEX = "http://192.168.1.2:8080/video"
+# Set CAMERA_URL env var on Pi to the IP Webcam stream, e.g.:
+#   export CAMERA_URL="http://192.168.1.x:8080/video"
+# Falls back to local webcam (index 0) when the variable is not set.
+_cam_url = _os.environ.get("CAMERA_URL", "")
+CAMERA_INDEX = _cam_url if _cam_url else 0
 
 # True = Pi / headless server (no cv2.imshow). False = dev laptop (shows window).
 HEADLESS_MODE = True
@@ -24,7 +27,6 @@ WANDERING_TORTUOSITY_THRESHOLD = 3.0
 WANDERING_BUFFER_FRAMES = TARGET_FPS * WANDERING_MIN_WALK_SECONDS  # 4500 frames
 
 # Pain Detection
-import os as _os
 PAIN_MODEL_PATH = _os.path.join(
     _os.path.dirname(_os.path.abspath(__file__)),
     "..", "emotion_recognition", "pain_efficientnet_b0.pt"
