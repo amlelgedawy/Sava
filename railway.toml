@@ -3,7 +3,6 @@ builder = "nixpacks"
 
 [build.env]
 NIXPACKS_PYTHON_VERSION = "3.12"
-NIXPACKS_INSTALL_CMD = "pip install -r requirements-django.txt"
 
 [deploy]
 startCommand = "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
