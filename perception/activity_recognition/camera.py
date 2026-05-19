@@ -13,11 +13,13 @@ from .config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
     TARGET_FPS, ENABLE_RECORDING, OUTPUT_VIDEO_NAME,
     WANDERING_TORTUOSITY_THRESHOLD, WANDERING_BUFFER_FRAMES,
-    WANDERING_MIN_WALK_SECONDS,
+    WANDERING_MIN_WALK_SECONDS, PAIN_MODEL_PATH, PAIN_FRAME_INTERVAL,
+    ACCEL_ENABLED, HEADLESS_MODE,
 )
 from .detector import detect_person
 from .pose_estimator import PoseEstimator
 from perception.object_detection import DangerousObjectDetector
+from ..emotion_recognition.pain_classifier import PainClassifier
 
 # ----------------------------
 # SkateFormer paths & config
@@ -580,27 +582,49 @@ def _get_bbox_center(frame_before, frame_after):
 
 def _detect_and_get_center(frame, yolo_model):
     """
-    Run YOLO, draw boxes, and return the centre of the first person box.
-    Returns (annotated_frame, (cx, cy) or None, boxes).
+    Run YOLO, draw boxes, and return centre + all boxes + best person bbox.
+    Returns (annotated_frame, (cx, cy) or None, boxes, (x1,y1,x2,y2) or None).
+    boxes       — all YOLO person boxes (needed by PatientIdentifier)
+    person_bbox — single best-confidence bbox tuple (needed for pain crop)
     """
-    results = yolo_model(frame, classes=[0], verbose=False)
+    results   = yolo_model(frame, classes=[0], verbose=False, device='cpu')
     annotated = results[0].plot()
 
     center = None
+    bbox   = None
     boxes  = results[0].boxes
     if boxes is not None and len(boxes) > 0:
-        # Take the highest-confidence person box
-        best   = boxes[boxes.conf.argmax()]
+        best            = boxes[boxes.conf.argmax()]
         x1, y1, x2, y2 = best.xyxy[0].cpu().numpy()
-        center = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+        center          = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+        bbox            = (int(x1), int(y1), int(x2), int(y2))
 
-    return annotated, center, boxes
+    return annotated, center, boxes, bbox
+
+
+def _face_crop_from_bbox(frame, bbox):
+    """
+    Crop the upper 30% of a YOLO person bounding box as a face region.
+    Returns the face crop, or None if bbox is invalid.
+    """
+    if bbox is None:
+        return None
+    x1, y1, x2, y2 = bbox
+    h, w            = frame.shape[:2]
+    face_y2         = int(y1 + (y2 - y1) * 0.30)
+    x1c             = max(0, x1)
+    y1c             = max(0, y1)
+    x2c             = min(w, x2)
+    y2c             = min(h, face_y2)
+    if x2c <= x1c or y2c <= y1c:
+        return None
+    return frame[y1c:y2c, x1c:x2c]
 
 
 def initialize_camera():
-    cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(CAMERA_INDEX)
     if not cap.isOpened():
-        raise Exception(" Error: Cannot open camera")
+        raise Exception("❌ Error: Cannot open camera")
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
     return cap
@@ -631,11 +655,24 @@ def run_camera():
     wandering  = WanderingDetector()
     identifier = PatientIdentifier()
 
-    # Dangerous object detector
     obj_detector = DangerousObjectDetector()
     obj_loaded = obj_detector.load()
     if not obj_loaded:
-        print("  Object detection disabled — model not found.")
+        print("⚠️  Object detection disabled — model not found.")
+
+    # Accelerometer — graceful fallback if hardware not connected or smbus2 not installed
+    accel = None
+    if ACCEL_ENABLED:
+        try:
+            from .accelerometer import AccelerometerReader
+            accel = AccelerometerReader()
+            accel.start()
+            print("✅ Accelerometer (MPU-6050) connected.")
+        except Exception as e:
+            print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
+    # emotion_det = EmotionDetector(device)   # dropped — lowest priority
+    # pain_det    = PainDetector()            # commented — PSPI fusion later
+    pain_clf = PainClassifier(PAIN_MODEL_PATH, device)
 
     cap      = initialize_camera()
     recorder = initialize_recorder()
@@ -644,10 +681,12 @@ def run_camera():
     print(" Waiting for face recognition to identify patient...")
     print("Press 'q' to quit.")
 
-    prev_time   = 0
-    last_pred   = None
-    last_conf   = 0.0
-    fall_consec = 0   # consecutive frames where smoothed prediction == FALL
+    prev_time      = 0
+    last_pred      = None
+    last_conf      = 0.0
+    fall_consec    = 0
+    last_pain_prob = None   # float 0-100 or None when model not trained
+    frame_count    = 0
     # Temporal smoothing: average softmax probs over last 15 frames
     # to eliminate single-frame spikes (random FALL, etc.)
     SMOOTH_WINDOW     = 15
@@ -668,8 +707,8 @@ def run_camera():
         frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
         raw_frame = frame.copy()  # Keep a clean copy for face recognition
 
-        # 1️ Person Detection (YOLO) — get annotated frame + bbox centre + boxes
-        frame, bbox_center, yolo_boxes = _detect_and_get_center(frame, yolo)
+        # 1️⃣ Person Detection (YOLO) — boxes for face recognition, bbox for pain crop
+        frame, bbox_center, yolo_boxes, person_bbox = _detect_and_get_center(frame, yolo)
 
         # 2️ Face Recognition — identify patient from detected person
         patient_id = identifier.identify(raw_frame, yolo_boxes)
@@ -730,6 +769,17 @@ def run_camera():
         fps       = 1.0 / elapsed if elapsed > 0 else 0
         prev_time = current_time
 
+        # 5️⃣ Pain Detection — EfficientNet-B0 classifier on YOLO face crop
+        frame_count += 1
+        face_crop = _face_crop_from_bbox(frame, person_bbox)
+        if face_crop is not None:
+            h, w = face_crop.shape[:2]
+            if h < 192 or w < 192:
+                face_crop = cv2.resize(face_crop, (224, 224))
+            # last_pspi, _ = pain_det.process(face_crop)  # PSPI — commented for future fusion
+            if frame_count % PAIN_FRAME_INTERVAL == 0:
+                last_pain_prob = pain_clf.predict(face_crop)
+
         # ----------------------------------------------------------------
         # Overlay rendering
         # ----------------------------------------------------------------
@@ -768,14 +818,27 @@ def run_camera():
             cv2.putText(frame, act_text, (10, 95),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, act_color, 2)
 
+        # Pain overlay
+        if last_pain_prob is not None:
+            cv2.putText(frame, f"Pain: {last_pain_prob:.0f}%",
+                        (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (200, 200, 200), 2)
+        else:
+            cv2.putText(frame, "Pain: -- (model not trained)",
+                        (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (100, 100, 100), 2)
+
         # Wandering alert
         if wandering.is_wandering:
-            cv2.putText(frame, " WANDERING DETECTED", (10, 135),
+            cv2.putText(frame, "⚠ WANDERING DETECTED", (10, 165),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
-        # Fall alert — requires FALL_PERSIST_FRAMES consecutive frames to suppress arm-raise false positives
-        if fall_consec >= FALL_PERSIST_FRAMES:
-            cv2.putText(frame, "FALL DETECTED", (10, 145),
+        # Fall alert — camera + accelerometer fusion
+        camera_fall  = fall_consec >= FALL_PERSIST_FRAMES
+        accel_impact = accel.recent_impact   if accel else False
+        accel_alone  = accel.standalone_fall if accel else False
+        # Primary:     camera sees FALL for N frames AND accelerometer confirms impact
+        # Safety net:  accelerometer alone detects very hard impact (covers out-of-view falls)
+        if (camera_fall and accel_impact) or accel_alone:
+            cv2.putText(frame, "FALL DETECTED", (10, 200),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
         # Dangerous object overlays (bounding boxes + labels on frame)
@@ -788,17 +851,22 @@ def run_camera():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 y_off += 30
 
-        cv2.imshow("SAVA - Alzheimer Monitoring", frame)
+        if not HEADLESS_MODE:
+            cv2.imshow("SAVA - Alzheimer Monitoring", frame)
 
         if recorder:
             recorder.write(frame)
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if not HEADLESS_MODE and cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     pose_est.close()
+    if accel:
+        accel.stop()
+    # pain_det.close()   # commented — PSPI fusion later
     if recorder:
         recorder.release()
-    cv2.destroyAllWindows()
-    print(" Camera stopped cleanly.")
+    if not HEADLESS_MODE:
+        cv2.destroyAllWindows()
+    print("🛑 Camera stopped cleanly.")
