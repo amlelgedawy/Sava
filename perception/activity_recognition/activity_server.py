@@ -7,7 +7,7 @@ full activity recognition pipeline:
   - SkateFormer 9-class activity recognition (with temporal smoothing)
   - Wandering detection
   - Dangerous object detection
-  - Sends events to Django API (FALL, CHEST_PAIN, WANDERING, DANGEROUS_OBJECT)
+  - Returns all results as JSON — Django's AIDispatcher handles event storage and alerting
 
 Run with:
     .\venv310\Scripts\python -m perception.activity_recognition.activity_server
@@ -42,8 +42,6 @@ from .camera import (
     _load_model,
     _predict,
     WanderingDetector,
-    _send_activity_event,
-    _send_object_detection_event,
 )
 from perception.object_detection import DangerousObjectDetector
 from .config import TARGET_FPS
@@ -242,21 +240,6 @@ def process_frame():
             }
             for d in obj_dets
         ]
-
-        # 7) Send events to Django API (only when patient_id known)
-        if patient_id:
-            if sess.last_pred == "FALL":
-                _send_activity_event(patient_id, "FALL", sess.last_conf)
-            elif sess.last_pred == "CHEST_PAIN":
-                _send_activity_event(patient_id, "CHEST_PAIN", sess.last_conf)
-            if is_wandering:
-                walk_secs = sess.wandering._walk_frames / TARGET_FPS
-                _send_activity_event(
-                    patient_id, "WALK", sess.last_conf,
-                    is_wandering=True, walk_duration=walk_secs,
-                )
-            if obj_dets:
-                _send_object_detection_event(patient_id, obj_dets)
 
         return jsonify({
             "activity": activity,

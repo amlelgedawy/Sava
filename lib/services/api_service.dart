@@ -453,9 +453,12 @@ class ApiService {
       if (resp.statusCode == 200) {
         _handleDetectionResponse(resp.body);
       } else {
+        debugPrint(
+            '[detectObjects] HTTP ${resp.statusCode}: ${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}');
         AppState.detectedObjects.value = [];
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[detectObjects] FAILED to reach $_objectDetectionUrl: $e');
       AppState.detectedObjects.value = [];
     }
   }
@@ -585,9 +588,13 @@ class ApiService {
       if (resp.statusCode == 200) {
         _handleActivityResponse(resp.body);
       } else {
+        debugPrint(
+            '[processActivityFrame] HTTP ${resp.statusCode}: ${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}');
         AppState.activityResult.value = ActivityResult.empty;
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint(
+          '[processActivityFrame] FAILED to reach $_activityServerUrl: $e');
       AppState.activityResult.value = ActivityResult.empty;
     }
   }
