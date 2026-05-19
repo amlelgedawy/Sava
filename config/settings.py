@@ -13,7 +13,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-dev-key")
 DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS", "127.0.0.1,localhost"
+    "ALLOWED_HOSTS", "127.0.0.1,localhost,10.0.2.2"
 ).split(",")
 
 # Applications
@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     "rest_framework",
+    "corsheaders",
 
     "apps.accounts",
     "apps.monitoring",
@@ -34,6 +35,8 @@ INSTALLED_APPS = [
 # Middleware
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -76,10 +79,15 @@ connect(
 
 # Static files
 STATIC_URL = "/static/"
-
+STATIC_ROOT = BASE_DIR / "staticfiles"
+if not DEBUG:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 # Media files (uploads)
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# CORS — allow Flutter app and Railway preview
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "True") == "True"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -87,6 +95,11 @@ AI_SERVER_URL = os.getenv("AI_SERVER_URL", "http://127.0.0.1:5000")
 AI_FACE_ENDPOINT = os.getenv("AI_FACE_ENDPOINT", "/analyze-face")
 
 OBJECT_DETECTION_SERVER_URL = os.getenv("OBJECT_DETECTION_SERVER_URL", "http://127.0.0.1:5002")
+
+ACTIVITY_SERVER_URL = os.getenv("ACTIVITY_SERVER_URL", "http://127.0.0.1:5003")
+
+PI_API_KEY = os.getenv("PI_API_KEY", "sava-pi-dev-key")
+DJANGO_HOST = os.getenv("DJANGO_HOST", "127.0.0.1")
 
 FACE_UNKNOWN_THRESHOLD = float(os.getenv("FACE_UNKNOWN_THRESHOLD", "0.80"))
 ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "60"))

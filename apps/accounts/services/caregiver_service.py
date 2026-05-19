@@ -70,7 +70,12 @@ class CaregiverService:
         except Exception:
             raise NotFoundError("Contract not found.")
 
-        if str(contract.caregiver.id) != caregiver_id:
+        try:
+            caregiver_oid = ObjectId(caregiver_id)
+        except Exception:
+            raise BadRequestError("Invalid caregiver_id.")
+
+        if contract.caregiver.id != caregiver_oid:
             raise ForbiddenError("Only the offered caregiver can respond.")
         if contract.status != CaregiverContract.STATUS_PENDING:
             raise BadRequestError("This contract is no longer pending.")
@@ -98,7 +103,7 @@ class CaregiverService:
             raise BadRequestError("Only active contracts can be ended.")
 
         user = get_user(user_id)
-        is_caregiver = str(contract.caregiver.id) == user_id
+        is_caregiver = contract.caregiver.id == user.id
         is_primary = PatientRelativeLink.objects(
             patient=contract.patient, relative=user,
             role_type=PatientRelativeLink.ROLE_PRIMARY,
@@ -118,7 +123,7 @@ class CaregiverService:
         if caregiver.role != User.ROLE_CAREGIVER:
             raise BadRequestError("User is not a CAREGIVER.")
         contracts = CaregiverContract.objects(
-            caregiver=caregiver, status=CaregiverContract.STATUS_ACTIVE
+            caregiver=caregiver.id, status=CaregiverContract.STATUS_ACTIVE
         )
         return [c.patient for c in contracts]
 
@@ -129,6 +134,16 @@ class CaregiverService:
             patient=patient, status=CaregiverContract.STATUS_ACTIVE
         ).first()
         return contract.caregiver if contract else None
+
+    @staticmethod
+    def get_contracts_for_caregiver(caregiver_id: str, status_filter: str = None) -> List[CaregiverContract]:
+        caregiver = get_user(caregiver_id)
+        if caregiver.role != User.ROLE_CAREGIVER:
+            raise BadRequestError("User is not a CAREGIVER.")
+        q = CaregiverContract.objects(caregiver=caregiver.id)
+        if status_filter:
+            q = q.filter(status=status_filter.strip().upper())
+        return list(q.order_by("-created_at"))
 
     # Alert recipients
 

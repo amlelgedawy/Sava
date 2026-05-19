@@ -5,9 +5,10 @@ __pycache__/
 
 # Virtual environment
 venv/
+venv310/
+venv313/
 env/
 .env
-
 # YOLO model weight (download from Ultralytics)
 yolov8n.pt
 
@@ -22,8 +23,7 @@ perception/activity_recognition/data/keypoints_v2/
 .vscode/
 .idea/
 
-# Claude
-.claude/
+.dart_tool/
 
 # OS
 .DS_Store
@@ -34,3 +34,7 @@ node_modules/
 .env
 
 uploads/
+build/
+test/
+staticfiles/
+media/

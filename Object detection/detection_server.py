@@ -58,7 +58,10 @@ def detect():
 
     try:
         frame_bytes = request.files['frame'].read()
-        image = Image.open(io.BytesIO(frame_bytes)).convert('RGB')
+        image = Image.open(io.BytesIO(frame_bytes))
+        # Respect EXIF rotation so portrait captures are upright before detection
+        from PIL import ImageOps
+        image = ImageOps.exif_transpose(image).convert('RGB')
         img_width, img_height = image.size
 
         results = model.predict(

@@ -13,11 +13,15 @@ from apps.accounts.views import (
     ContractRespondView,
     ContractEndView,
     CaregiverPatientsView,
+    CaregiverContractsView,
+    PatientCaregiverView,
     MedicationScheduleView,
     AdminCaregiversView,
     AdminSetSalaryView,
     AdminDeleteUserView,
     AdminUsersListView,
+    AdminRejectCaregiverView,
+    AdminChangeRelativeRoleView,
 )
 
 urlpatterns = [
@@ -43,6 +47,8 @@ urlpatterns = [
     path("contracts/<str:contract_id>/respond", ContractRespondView.as_view(), name="contract_respond"),
     path("contracts/<str:contract_id>/end", ContractEndView.as_view(), name="contract_end"),
     path("caregivers/<str:caregiver_id>/patients", CaregiverPatientsView.as_view(), name="caregiver_patients"),
+    path("caregivers/<str:caregiver_id>/contracts", CaregiverContractsView.as_view(), name="caregiver_contracts"),
+    path("patients/<str:patient_id>/caregiver", PatientCaregiverView.as_view(), name="patient_caregiver"),
 
     # Medication schedule
     path("patients/<str:patient_id>/medication", MedicationScheduleView.as_view(), name="medication_schedule"),
@@ -52,4 +58,6 @@ urlpatterns = [
     path("admin/caregivers/<str:caregiver_id>/salary", AdminSetSalaryView.as_view(), name="admin_set_salary"),
     path("admin/users", AdminUsersListView.as_view(), name="admin_users_list"),
     path("admin/users/<str:user_id>", AdminDeleteUserView.as_view(), name="admin_delete_user"),
+    path("admin/caregivers/<str:caregiver_id>/reject", AdminRejectCaregiverView.as_view(), name="admin_reject_caregiver"),
+    path("admin/patients/<str:patient_id>/relatives/<str:relative_id>/role", AdminChangeRelativeRoleView.as_view(), name="admin_change_relative_role"),
 ]

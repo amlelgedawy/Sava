@@ -37,6 +37,21 @@ class RelativeService:
             raise BadRequestError("Target user is not a RELATIVE.")
 
         role_type = role_type.strip().upper()
+
+        existing_link = PatientRelativeLink.objects(patient=patient, relative=new_relative).first()
+        if existing_link:
+            if existing_link.role_type == role_type:
+                raise ConflictError("This relative is already linked to this patient.")
+            if role_type == PatientRelativeLink.ROLE_PRIMARY:
+                existing_primary = PatientRelativeLink.objects(
+                    patient=patient, role_type=PatientRelativeLink.ROLE_PRIMARY
+                ).count()
+                if existing_primary >= 2:
+                    raise BadRequestError("A patient can have at most 2 primary relatives.")
+            existing_link.role_type = role_type
+            existing_link.save()
+            return existing_link
+
         if role_type == PatientRelativeLink.ROLE_PRIMARY:
             existing_primary = PatientRelativeLink.objects(
                 patient=patient, role_type=PatientRelativeLink.ROLE_PRIMARY
@@ -44,15 +59,12 @@ class RelativeService:
             if existing_primary >= 2:
                 raise BadRequestError("A patient can have at most 2 primary relatives.")
 
-        try:
-            return PatientRelativeLink(
-                patient=patient,
-                relative=new_relative,
-                role_type=role_type,
-                created_at=datetime.utcnow(),
-            ).save()
-        except NotUniqueError:
-            raise ConflictError("This relative is already linked to this patient.")
+        return PatientRelativeLink(
+            patient=patient,
+            relative=new_relative,
+            role_type=role_type,
+            created_at=datetime.utcnow(),
+        ).save()
 
     @staticmethod
     def get_relatives_for_patient(patient_id: str) -> List[dict]:
