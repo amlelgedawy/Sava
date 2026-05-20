@@ -25,7 +25,7 @@ from ..emotion_recognition.pain_classifier import PainClassifier
 # SkateFormer paths & config
 # ----------------------x------
 import os
-SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "SkateFormer", "SkateFormer-main")
+SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "SkateFormer")
 CHECKPOINT      = Path(os.path.join(os.path.dirname(__file__), "work_dir", "sava_8class", "best_8class.pt"))
 CLASS_NAMES     = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE"]
 
@@ -683,18 +683,16 @@ def run_camera():
     last_pred      = None
     last_conf      = 0.0
     fall_consec    = 0
+    drink_consec   = 0
     last_pain_prob = None   # float 0-100 or None when model not trained
     frame_count    = 0
-    # Temporal smoothing: average softmax probs over last 15 frames
-    # to eliminate single-frame spikes (random FALL, etc.)
-    SMOOTH_WINDOW     = 15
-    CONFIDENCE_THRESH = 0.60   # below this → show "Uncertain"
-    # FALL requires higher confidence — false alarms are worse than missed detections
-    CLASS_THRESHOLDS  = {"FALL": 0.75}
-    # FALL must be the smoothed prediction for this many consecutive frames before alerting.
-    # Genuine falls persist; arm-raise-while-drinking lasts only a few frames.
-    FALL_PERSIST_FRAMES = 10
-    probs_buffer        = deque(maxlen=SMOOTH_WINDOW)
+    SMOOTH_WINDOW      = 15
+    CONFIDENCE_THRESH  = 0.75   # raised from 0.60 to cut wrong guesses
+    CLASS_THRESHOLDS   = {"FALL": 0.75}
+    FALL_PERSIST_FRAMES  = 10
+    DRINK_PERSIST_FRAMES = 8     # DRINK must hold N frames before showing
+    DRINK_EAT_MARGIN     = 0.15  # if DRINK barely beats EAT, prefer EAT
+    probs_buffer         = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
         ret, frame = cap.read()
@@ -733,7 +731,23 @@ def run_camera():
                     last_pred = None   # show "Uncertain"
                     last_conf = best_conf
 
-        # Update FALL persistence counter
+                # Margin check: if DRINK barely beats EAT, prefer EAT
+                if last_pred == "DRINK":
+                    drink_prob = float(avg_probs[CLASS_NAMES.index("DRINK")])
+                    eat_prob   = float(avg_probs[CLASS_NAMES.index("EAT")])
+                    if drink_prob - eat_prob < DRINK_EAT_MARGIN:
+                        last_pred = "EAT"
+                        last_conf = eat_prob
+
+        # DRINK persistence gate: suppress until sustained for N frames
+        if last_pred == "DRINK":
+            drink_consec += 1
+            if drink_consec < DRINK_PERSIST_FRAMES:
+                last_pred = None
+        else:
+            drink_consec = 0
+
+        # FALL persistence counter
         if last_pred == "FALL":
             fall_consec += 1
         else:
