@@ -26,20 +26,19 @@ from ..emotion_recognition.pain_classifier import PainClassifier
 # ----------------------x------
 import os
 SKATEFORMER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "SkateFormer", "SkateFormer-main")
-CHECKPOINT      = Path(os.path.join(os.path.dirname(__file__), "work_dir", "sava_9class", "best_9class.pt"))
-CLASS_NAMES     = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE", "CHEST_PAIN"]
+CHECKPOINT      = Path(os.path.join(os.path.dirname(__file__), "work_dir", "sava_8class", "best_8class.pt"))
+CLASS_NAMES     = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE"]
 
 # Overlay colours per label
 LABEL_COLORS = {
-    "EAT":        (0, 200, 255),  # yellow
-    "DRINK":      (0, 200, 255),  # yellow
-    "SLEEP":      (200, 200, 0),  # cyan
-    "FALL":       (0, 0, 255),    # red — alert
-    "WALK":       (0, 255, 0),    # green
-    "SIT":        (255, 180, 0),  # orange
-    "STAND":      (255, 255, 0),  # light blue
-    "USE_PHONE":  (180, 0, 255),  # purple
-    "CHEST_PAIN": (0, 0, 255),    # red — alert
+    "EAT":       (0, 200, 255),  # yellow
+    "DRINK":     (0, 200, 255),  # yellow
+    "SLEEP":     (200, 200, 0),  # cyan
+    "FALL":      (0, 0, 255),    # red — alert
+    "WALK":      (0, 255, 0),    # green
+    "SIT":       (255, 180, 0),  # orange
+    "STAND":     (255, 255, 0),  # light blue
+    "USE_PHONE": (180, 0, 255),  # purple
 }
 
 
@@ -48,7 +47,7 @@ LABEL_COLORS = {
 # ---------------------------------------------------------------------------
 
 def _load_model(device):
-    """Load fine-tuned 9-class SkateFormer. Returns model or None if checkpoint missing."""
+    """Load fine-tuned 8-class SkateFormer. Returns model or None if checkpoint missing."""
     if not CHECKPOINT.exists():
         print(f"  Checkpoint not found: {CHECKPOINT}")
         print("   Run train_finetune_v2.py first. Running without activity recognition.")
@@ -67,7 +66,7 @@ def _load_model(device):
         in_channels=3,
         depths=(2, 2, 2, 2),
         channels=(96, 192, 192, 192),
-        num_classes=len(CLASS_NAMES),   # 9
+        num_classes=len(CLASS_NAMES),   # 8
         embed_dim=96,
         num_people=2,
         num_frames=64,
@@ -89,7 +88,7 @@ def _load_model(device):
     ckpt = torch.load(str(CHECKPOINT), map_location=device)
     model.load_state_dict(ckpt["model"], strict=True)
     model.eval()
-    print(f" Loaded 9-class SkateFormer from {CHECKPOINT}")
+    print(f" Loaded 8-class SkateFormer from {CHECKPOINT}")
     return model
 
 
@@ -97,7 +96,7 @@ def _load_model(device):
 def _predict(model, device, skateformer_input):
     """
     skateformer_input: ndarray (3, 64, 24, 2)
-    Returns softmax probability vector (9,) as ndarray.
+    Returns softmax probability vector (8,) as ndarray.
     """
     x       = torch.from_numpy(skateformer_input).float().unsqueeze(0).to(device)
     index_t = torch.arange(64, dtype=torch.long).unsqueeze(0).to(device)
@@ -182,14 +181,13 @@ FACE_RECOGNITION_INTERVAL = 5
 # Cooldowns for activity alerts (seconds)
 _ALERT_COOLDOWNS = {
     "FALL": 30,
-    "CHEST_PAIN": 30,
     "WANDERING": 120,
     "DANGEROUS_OBJECT": 60,
 }
 _last_alert_time = {}
 
 # Critical events that should be queued when patient_id is not yet available
-_CRITICAL_ACTIVITIES = {"FALL", "CHEST_PAIN"}
+_CRITICAL_ACTIVITIES = {"FALL"}
 _pending_events = []          # list of dicts queued while patient_id is None
 _PENDING_MAX = 20             # cap to avoid unbounded memory growth
 _pending_lock = threading.Lock()
@@ -692,7 +690,7 @@ def run_camera():
     SMOOTH_WINDOW     = 15
     CONFIDENCE_THRESH = 0.60   # below this → show "Uncertain"
     # FALL requires higher confidence — false alarms are worse than missed detections
-    CLASS_THRESHOLDS  = {"FALL": 0.75, "CHEST_PAIN": 0.75}
+    CLASS_THRESHOLDS  = {"FALL": 0.75}
     # FALL must be the smoothed prediction for this many consecutive frames before alerting.
     # Genuine falls persist; arm-raise-while-drinking lasts only a few frames.
     FALL_PERSIST_FRAMES = 10
@@ -753,8 +751,6 @@ def run_camera():
         current_pid = identifier.patient_id
         if last_pred == "FALL":
             _send_activity_event(current_pid, "FALL", last_conf)
-        elif last_pred == "CHEST_PAIN":
-            _send_activity_event(current_pid, "CHEST_PAIN", last_conf)
         if wandering.is_wandering:
             walk_secs = wandering._walk_frames / TARGET_FPS
             _send_activity_event(current_pid, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
