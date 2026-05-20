@@ -1,7 +1,9 @@
 fastapi
 uvicorn[standard]
+setuptools
 python-multipart
 face-recognition
+git+https://github.com/ageitgey/face_recognition_models.git
 dlib-bin
 numpy
 opencv-python-headless
