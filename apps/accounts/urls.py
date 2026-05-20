@@ -8,6 +8,7 @@ from apps.accounts.views import (
     PatientListCreateView,
     PatientDetailView,
     PatientRelativesView,
+    RelativeRoleView,
     AvailableCaregiversView,
     CaregiverOfferView,
     ContractRespondView,
@@ -40,6 +41,7 @@ urlpatterns = [
 
     # Relative management
     path("patients/<str:patient_id>/relatives", PatientRelativesView.as_view(), name="patient_relatives"),
+    path("patients/<str:patient_id>/relatives/<str:relative_id>/role", RelativeRoleView.as_view(), name="relative_role"),
 
     # Caregiver contracts
     path("caregivers/available", AvailableCaregiversView.as_view(), name="available_caregivers"),

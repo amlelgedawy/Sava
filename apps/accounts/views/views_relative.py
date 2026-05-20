@@ -62,3 +62,22 @@ class PatientRelativesView(APIView):
             return Response({"detail": "Secondary relative removed."}, status=status.HTTP_200_OK)
         except Exception as e:
             return handle_service_error(e)
+
+
+class RelativeRoleView(APIView):
+    """PATCH /api/patients/<patient_id>/relatives/<relative_id>/role  body: {requester_id, role}"""
+    def patch(self, request, patient_id: str, relative_id: str):
+        requester_id = request.data.get("requester_id")
+        new_role = request.data.get("role")
+        if not requester_id or not new_role:
+            return Response({"detail": "requester_id and role are required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            link = RelativeService.change_relative_role(patient_id, requester_id, relative_id, new_role)
+            return Response({
+                "detail": "Relative role updated.",
+                "patient_id": str(link.patient.id),
+                "relative_id": str(link.relative.id),
+                "role_type": link.role_type,
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return handle_service_error(e)

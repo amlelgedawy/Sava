@@ -87,3 +87,29 @@ class RelativeService:
         if link.role_type == PatientRelativeLink.ROLE_PRIMARY:
             raise ForbiddenError("Cannot remove a primary relative.")
         link.delete()
+
+    @staticmethod
+    def change_relative_role(patient_id: str, requester_id: str, relative_id: str, new_role: str) -> PatientRelativeLink:
+        patient = get_patient(patient_id)
+        requester = get_user(requester_id)
+        RelativeService.assert_primary_relative(patient, requester)
+
+        relative = get_user(relative_id)
+        link = PatientRelativeLink.objects(patient=patient, relative=relative).first()
+        if not link:
+            raise NotFoundError("This relative is not linked to this patient.")
+
+        new_role = new_role.strip().upper()
+        if new_role not in (PatientRelativeLink.ROLE_PRIMARY, PatientRelativeLink.ROLE_SECONDARY):
+            raise BadRequestError("role must be PRIMARY or SECONDARY.")
+
+        if new_role == PatientRelativeLink.ROLE_PRIMARY:
+            existing_primary = PatientRelativeLink.objects(
+                patient=patient, role_type=PatientRelativeLink.ROLE_PRIMARY
+            ).count()
+            if link.role_type != PatientRelativeLink.ROLE_PRIMARY and existing_primary >= 2:
+                raise BadRequestError("A patient can have at most 2 primary relatives.")
+
+        link.role_type = new_role
+        link.save()
+        return link
