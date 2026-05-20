@@ -5,6 +5,7 @@ from apps.monitoring.views_person_tracking import PersonTrackingView, ActivePers
 from apps.monitoring.views_activity import ActivityEventView, ActivityHistoryView, PatientLookupView
 from apps.monitoring.views_object_detection import ObjectDetectionEventView, ObjectDetectionFrameView
 from apps.monitoring.views_stream import PushFrameView, LiveStreamView, AIResultView, ActivityLogView
+from apps.monitoring.views_health import HealthCheckView
 
 urlpatterns = [
     path("frames/ingest", FrameIngestView.as_view(), name="frame_ingest"),
@@ -31,4 +32,7 @@ urlpatterns = [
     path("stream/live/<str:patient_id>", LiveStreamView.as_view(), name="stream_live"),
     path("stream/ai-result", AIResultView.as_view(), name="stream_ai_result"),
     path("stream/activity-log/<str:patient_id>", ActivityLogView.as_view(), name="stream_activity_log"),
+
+    # Health check
+    path("health", HealthCheckView.as_view(), name="health_check"),
 ]
