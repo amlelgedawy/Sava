@@ -9,15 +9,15 @@ import numpy as np
 import torch
 import requests
 
-from .config import (
+from config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
     TARGET_FPS, ENABLE_RECORDING, OUTPUT_VIDEO_NAME,
     WANDERING_TORTUOSITY_THRESHOLD, WANDERING_BUFFER_FRAMES,
     WANDERING_MIN_WALK_SECONDS,
 )
-from .detector import detect_person
-from .pose_estimator import PoseEstimator
-from perception.object_detection import DangerousObjectDetector
+from detector import detect_person
+from pose_estimator import PoseEstimator
+from object_detector import DangerousObjectDetector
 
 # ----------------------------
 # SkateFormer paths & config

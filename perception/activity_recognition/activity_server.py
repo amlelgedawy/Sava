@@ -36,15 +36,15 @@ from flask_cors import CORS
 from PIL import Image, ImageOps
 
 # Reuse existing pipeline components
-from .pose_estimator import PoseEstimator
-from .camera import (
+from pose_estimator import PoseEstimator
+from camera import (
     CLASS_NAMES,
     _load_model,
     _predict,
     WanderingDetector,
 )
 from object_detector import DangerousObjectDetector
-from .config import TARGET_FPS
+from config import TARGET_FPS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("ACTIVITY_SERVER_PORT", "5003"))

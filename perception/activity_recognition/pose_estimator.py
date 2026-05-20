@@ -1,7 +1,7 @@
 import numpy as np
 import mediapipe as mp
 
-from .data_preprocessing.convert_to_ntu import mediapipe_to_ntu, normalize_skeleton
+from data_preprocessing.convert_to_ntu import mediapipe_to_ntu, normalize_skeleton
 
 # SkateFormer partition joint order: maps NTU 25-joint → 24-joint
 # Matches feeder_ntu.py `new_idx` when partition=True
