@@ -13,8 +13,10 @@ import time
 _lock = threading.Lock()
 _buffers: dict[str, bytes] = {}   # patient_id -> latest JPEG bytes
 _timestamps: dict[str, float] = {}  # patient_id -> epoch of last push
+_detections: dict[str, dict] = {}  # patient_id -> {source: {result, timestamp}}
 
 FRAME_STALE_SECONDS = 30          # treat frame as gone after this many seconds
+DETECTION_STALE_SECONDS = 10       # treat detection as gone after this
 
 
 class StreamManager:
@@ -54,6 +56,25 @@ class StreamManager:
                 + b"\r\n"
             )
             time.sleep(interval)
+
+    @staticmethod
+    def set_detection(patient_id: str, source: str, result: dict) -> None:
+        """Store latest AI result for a patient/source pair."""
+        with _lock:
+            patient_dets = _detections.setdefault(patient_id, {})
+            patient_dets[source] = {"result": result, "timestamp": time.time()}
+
+    @staticmethod
+    def get_detections(patient_id: str) -> dict:
+        """Return all non-stale detections for a patient as {source: result}."""
+        now = time.time()
+        out = {}
+        with _lock:
+            patient_dets = _detections.get(patient_id, {})
+            for source, entry in patient_dets.items():
+                if now - entry["timestamp"] <= DETECTION_STALE_SECONDS:
+                    out[source] = entry["result"]
+        return out
 
     @staticmethod
     def active_patients() -> list[str]:

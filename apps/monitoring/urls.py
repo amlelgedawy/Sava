@@ -4,7 +4,7 @@ from apps.monitoring.views_alerts import AlertDetailView, AlertsListView
 from apps.monitoring.views_person_tracking import PersonTrackingView, ActivePersonsView, CleanupPersonsView
 from apps.monitoring.views_activity import ActivityEventView, ActivityHistoryView, PatientLookupView
 from apps.monitoring.views_object_detection import ObjectDetectionEventView, ObjectDetectionFrameView
-from apps.monitoring.views_stream import PushFrameView, LiveStreamView, AIResultView, ActivityLogView
+from apps.monitoring.views_stream import PushFrameView, LiveStreamView, AIResultView, ActivityLogView, LatestDetectionsView, SnapshotView
 from apps.monitoring.views_health import HealthCheckView
 
 urlpatterns = [
@@ -30,8 +30,10 @@ urlpatterns = [
     # Stream pipeline
     path("stream/push-frame", PushFrameView.as_view(), name="stream_push_frame"),
     path("stream/live/<str:patient_id>", LiveStreamView.as_view(), name="stream_live"),
+    path("stream/snapshot/<str:patient_id>", SnapshotView.as_view(), name="stream_snapshot"),
     path("stream/ai-result", AIResultView.as_view(), name="stream_ai_result"),
     path("stream/activity-log/<str:patient_id>", ActivityLogView.as_view(), name="stream_activity_log"),
+    path("stream/latest-detections/<str:patient_id>", LatestDetectionsView.as_view(), name="stream_latest_detections"),
 
     # Health check
     path("health", HealthCheckView.as_view(), name="health_check"),

@@ -1,9 +1,7 @@
 import 'dart:async';
 
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import '../app_state.dart';
-import '../main.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 
@@ -28,71 +26,44 @@ class VisionPage extends StatefulWidget {
 }
 
 class _VisionPageState extends State<VisionPage> {
-  CameraController? _controller;
-  bool _cameraReady = false;
+  Timer? _detectionTimer;
+  Timer? _snapshotTimer;
+  int _snapshotTick = 0;
+  static const Duration _detectionInterval = Duration(seconds: 1);
+  static const Duration _snapshotInterval = Duration(milliseconds: 200);
 
-  Timer? _frameTimer;
-  bool _isSending = false;
-  static const Duration _frameInterval = Duration(seconds: 2);
+  bool get _streamReady =>
+      AppState.patientId.value != null && AppState.patientId.value!.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _startCamera();
+    _startPolling();
   }
 
-  Future<void> _startCamera() async {
-    if (cameras.isEmpty) return;
-    try {
-      _controller = CameraController(
-        cameras.first,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-      await _controller!.initialize();
-      if (!mounted) return;
-      setState(() => _cameraReady = true);
-      _startFrameLoop();
-    } catch (_) {
-      if (mounted) setState(() => _cameraReady = false);
-    }
+  void _startPolling() {
+    _detectionTimer?.cancel();
+    _detectionTimer =
+        Timer.periodic(_detectionInterval, (_) => _pollDetections());
+    _snapshotTimer?.cancel();
+    _snapshotTimer = Timer.periodic(_snapshotInterval, (_) {
+      if (mounted) setState(() => _snapshotTick++);
+    });
   }
 
-  void _startFrameLoop() {
-    _frameTimer?.cancel();
-    _frameTimer = Timer.periodic(_frameInterval, (_) => _captureAndSend());
-  }
-
-  Future<void> _captureAndSend() async {
-    if (_isSending || _controller == null || !_cameraReady) return;
-    _isSending = true;
-    try {
-      final file = await _controller!.takePicture();
-      final bytes = await file.readAsBytes();
-      // Fire all three pipelines in parallel — they run on different ports.
-      ApiService.detectObjects(bytes);
-      ApiService.analyzeFace(bytes);
-      ApiService.processActivityFrame(bytes);
-    } catch (_) {
-      AppState.detectedObjects.value = [];
-      AppState.detectedFaces.value = [];
-      AppState.activityResult.value = ActivityResult.empty;
-    } finally {
-      _isSending = false;
-    }
-  }
-
-  void _stopCamera() {
-    _frameTimer?.cancel();
-    _controller?.dispose();
-    AppState.detectedObjects.value = [];
-    AppState.detectedFaces.value = [];
-    AppState.activityResult.value = ActivityResult.empty;
+  Future<void> _pollDetections() async {
+    final patientId = AppState.patientId.value;
+    if (patientId == null || patientId.isEmpty) return;
+    await ApiService.fetchLatestDetections(patientId);
   }
 
   @override
   void dispose() {
-    _stopCamera();
+    _detectionTimer?.cancel();
+    _snapshotTimer?.cancel();
+    AppState.detectedObjects.value = [];
+    AppState.detectedFaces.value = [];
+    AppState.activityResult.value = ActivityResult.empty;
     super.dispose();
   }
 
@@ -102,17 +73,32 @@ class _VisionPageState extends State<VisionPage> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // ── 1. FULL SCREEN CAMERA FEED ────────────────────────────────────
+          // ── 1. FULL SCREEN PI MJPEG STREAM ──────────────────────────────
           Positioned.fill(
-            child: _cameraReady && _controller != null
-                ? CameraPreview(_controller!)
-                : const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
+            child: ValueListenableBuilder<String?>(
+              valueListenable: AppState.patientId,
+              builder: (_, patientId, __) {
+                if (patientId == null || patientId.isEmpty) {
+                  return const Center(
+                    child: Text('No patient selected',
+                        style: TextStyle(color: Colors.white)),
+                  );
+                }
+                return Image.network(
+                  '${ApiService.snapshotUrl(patientId)}?t=$_snapshotTick',
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Text('Waiting for stream...',
+                        style: TextStyle(color: Colors.white)),
                   ),
+                );
+              },
+            ),
           ),
 
           // ── 2. OBJECT DETECTION AR BOXES (RED) ───────────────────────────
-          if (_cameraReady)
+          if (_streamReady)
             Positioned.fill(
               child: ValueListenableBuilder<List<DetectedObject>>(
                 valueListenable: AppState.detectedObjects,
@@ -126,7 +112,7 @@ class _VisionPageState extends State<VisionPage> {
             ),
 
           // ── 3. FACE RECOGNITION AR BOXES (GREEN/RED) ─────────────────────
-          if (_cameraReady)
+          if (_streamReady)
             Positioned.fill(
               child: ValueListenableBuilder<List<DetectedFace>>(
                 valueListenable: AppState.detectedFaces,
@@ -140,7 +126,7 @@ class _VisionPageState extends State<VisionPage> {
             ),
 
           // ── 3b. PERSON BOUNDING BOXES (CYAN) from activity server ────────
-          if (_cameraReady)
+          if (_streamReady)
             Positioned.fill(
               child: ValueListenableBuilder<ActivityResult>(
                 valueListenable: AppState.activityResult,
@@ -154,7 +140,7 @@ class _VisionPageState extends State<VisionPage> {
             ),
 
           // ── 4. PATIENT + ACTIVITY INFO OVERLAY ───────────────────────────
-          if (_cameraReady)
+          if (_streamReady)
             Positioned(
               bottom: 90,
               left: 16,
@@ -249,7 +235,7 @@ class _VisionPageState extends State<VisionPage> {
                   ValueListenableBuilder<List<DetectedFace>>(
                 valueListenable: AppState.detectedFaces,
                 builder: (context, faces, _) => _AiStatusBadge(
-                  isReady: _cameraReady,
+                  isReady: _streamReady,
                   objectCount: objects.length,
                   faceCount: faces.length,
                 ),

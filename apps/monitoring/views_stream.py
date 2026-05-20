@@ -76,6 +76,26 @@ class LiveStreamView(View):
         )
 
 
+# GET /api/stream/snapshot/<patient_id>
+
+@method_decorator(csrf_exempt, name="dispatch")
+class SnapshotView(View):
+    """
+    Returns the latest single JPEG frame for a patient.
+    Flutter polls this at ~10fps to render a pseudo-live feed (Image.network
+    cannot decode multipart/x-mixed-replace MJPEG streams).
+    """
+
+    def get(self, request, patient_id: str):
+        from django.http import HttpResponse, HttpResponseNotFound
+        frame = StreamManager.get_latest_frame(patient_id)
+        if not frame:
+            return HttpResponseNotFound("No frame available")
+        resp = HttpResponse(frame, content_type="image/jpeg")
+        resp["Cache-Control"] = "no-store"
+        return resp
+
+
 # POST /api/stream/ai-result
 
 class AIResultView(APIView):
@@ -93,12 +113,28 @@ class AIResultView(APIView):
         if not source or not patient_id or not isinstance(result, dict):
             return Response({"detail": "source, patient_id and result required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Cache the latest result so Flutter can poll for live AR overlay
+        StreamManager.set_detection(patient_id, source, result)
+
         summary = ResultProcessor.process(source, patient_id, result)
 
         if "error" in summary:
             return Response(summary, status=status.HTTP_404_NOT_FOUND)
 
         return Response(summary, status=status.HTTP_200_OK)
+
+
+# GET /api/stream/latest-detections/<patient_id>
+
+class LatestDetectionsView(APIView):
+    """
+    Returns the latest cached AI results for a patient, used by Flutter
+    to render AR overlay boxes on top of the live MJPEG stream.
+    """
+
+    def get(self, request, patient_id: str):
+        detections = StreamManager.get_detections(patient_id)
+        return Response(detections, status=status.HTTP_200_OK)
 
 
 # GET /api/stream/activity-log/<patient_id>
