@@ -7,7 +7,7 @@ ultralytics
 opencv-python-headless
 numpy
 pillow
-mediapipe
+mediapipe==0.10.5
 scikit-learn
 joblib
 tqdm
