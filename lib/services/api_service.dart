@@ -7,16 +7,19 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://10.0.2.2:8000/api";
+  static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server
-  static const String _objectDetectionUrl = "http://10.0.2.2:5002";
+  static const String _objectDetectionUrl =
+      "https://object-detection-production-7fe6.up.railway.app";
 
   // Face recognition server
-  static const String _faceAiUrl = "http://10.0.2.2:5000";
+  static const String _faceAiUrl =
+      "https://face-recognition-production-e71d.up.railway.app";
 
   // Activity recognition server
-  static const String _activityServerUrl = "http://10.0.2.2:5003";
+  static const String _activityServerUrl =
+      "https://activity-recognition-production.up.railway.app";
 
   // AUTH
 
