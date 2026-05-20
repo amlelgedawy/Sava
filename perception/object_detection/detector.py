@@ -114,6 +114,7 @@ class DangerousObjectDetector:
             source=frame,
             conf=self._conf,
             verbose=False,
+            device='cpu',
         )
 
         h, w = frame.shape[:2]

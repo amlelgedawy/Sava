@@ -19,29 +19,32 @@ from model.SkateFormer import SkateFormer
 # Paths
 # ----------------------------
 KEYPOINTS_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\data\keypoints")
-PRETRAINED = Path(r"D:\Year 4 UNI\Sava\SkateFormer\skateformer_pretrained_weights\ntu60_CSub\SkateFormer_j.pt")
-WORK_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_9class")
+PRETRAINED = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_9class\best_9class.pt")
+WORK_DIR = Path(r"D:\Year 4 UNI\Sava\perception\activity_recognition\work_dir\sava_8class")
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 # ----------------------------
 # Classes (your mapping)
 # ----------------------------
-CLASS_NAMES = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE", "CHEST_PAIN"]
+CLASS_NAMES = ["EAT", "DRINK", "SLEEP", "FALL", "WALK", "SIT", "STAND", "USE_PHONE"]  # 8 classes — CHEST_PAIN removed
 CLASS_TO_ID = {c: i for i, c in enumerate(CLASS_NAMES)}
+
+# EAT upweighted to penalise EAT→DRINK misclassification
+CLASS_WEIGHTS = {"EAT": 2.0}
 
 # ----------------------------
 # Training settings (good for RTX 3060 6GB)
 # ----------------------------
 SEED = 1
-EPOCHS = 10
-BATCH_SIZE = 16
+EPOCHS = 20
+BATCH_SIZE = 4
 LR = 1e-4
 WEIGHT_DECAY = 1e-2
-NUM_WORKERS = 2
+NUM_WORKERS = 0
 VAL_RATIO = 0.2
 
-# Cap per class to prevent EAT (1383 files) from dominating. Set to None to use all.
-MAX_SAMPLES_PER_CLASS = 500
+# Cap matches the natural ceiling of minority classes (FALL/SLEEP ~990 available train windows)
+MAX_SAMPLES_PER_CLASS = 1000
 
 # ----------------------------
 # Utils
@@ -139,7 +142,7 @@ def build_model(device):
         depths=(2, 2, 2, 2),
         channels=(96, 192, 192, 192),
 
-        num_classes=len(CLASS_NAMES),   # ✅ 9 classes
+        num_classes=len(CLASS_NAMES),   # 8 classes
         embed_dim=96,
         num_people=2,
         num_frames=64,
@@ -178,26 +181,34 @@ def build_model(device):
 @torch.no_grad()
 def evaluate(model, loader, device):
     model.eval()
-    correct = 0
-    total = 0
+    per_correct = np.zeros(len(CLASS_NAMES))
+    per_total   = np.zeros(len(CLASS_NAMES))
 
     for x, index_t, y in loader:
-        x = x.to(device)
-        index_t = index_t.to(device)  # ✅ already (B,64)
-        y = torch.as_tensor(y, device=device, dtype=torch.long)
+        x       = x.to(device)
+        index_t = index_t.to(device)
+        y       = torch.as_tensor(y, device=device, dtype=torch.long)
+        pred    = model(x, index_t).argmax(dim=1)
+        for cid in range(len(CLASS_NAMES)):
+            mask = (y == cid)
+            per_correct[cid] += (pred[mask] == y[mask]).sum().item()
+            per_total[cid]   += mask.sum().item()
 
-        logits = model(x, index_t)
-        pred = logits.argmax(dim=1)
-        correct += (pred == y).sum().item()
-        total += y.numel()
-
-    return correct / max(total, 1)
+    per_acc = per_correct / np.maximum(per_total, 1)
+    overall = per_correct.sum() / max(per_total.sum(), 1)
+    for i, cls in enumerate(CLASS_NAMES):
+        print(f"    {cls:12s}: {per_acc[i]*100:5.1f}%  ({int(per_correct[i])}/{int(per_total[i])})")
+    return float(overall)
 
 
 def main():
     set_seed(SEED)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Device:", device)
+    if device == "cuda":
+        import os
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        torch.cuda.empty_cache()
 
     train_items, val_items = build_split()
 
@@ -211,23 +222,26 @@ def main():
         batch_size=BATCH_SIZE,
         sampler=sampler,
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False
     )
 
     model = build_model(device)
 
-    criterion = nn.CrossEntropyLoss()
+    w = torch.ones(len(CLASS_NAMES))
+    for cls, wt in CLASS_WEIGHTS.items():
+        w[CLASS_TO_ID[cls]] = wt
+    criterion = nn.CrossEntropyLoss(weight=w.to(device))
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
     best_acc = 0.0
-    best_path = WORK_DIR / "best_9class.pt"
+    best_path = WORK_DIR / "best_8class.pt"
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
