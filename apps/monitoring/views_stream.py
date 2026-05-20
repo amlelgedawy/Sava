@@ -70,10 +70,12 @@ class LiveStreamView(View):
     """
 
     def get(self, request, patient_id: str):
-        return StreamingHttpResponse(
+        resp = StreamingHttpResponse(
             StreamManager.mjpeg_generator(patient_id, fps=10),
             content_type="multipart/x-mixed-replace; boundary=frame",
         )
+        resp["Access-Control-Allow-Origin"] = "*"
+        return resp
 
 
 # GET /api/stream/snapshot/<patient_id>
@@ -93,6 +95,19 @@ class SnapshotView(View):
             return HttpResponseNotFound("No frame available")
         resp = HttpResponse(frame, content_type="image/jpeg")
         resp["Cache-Control"] = "no-store"
+        # CORS headers for Flutter Web
+        resp["Access-Control-Allow-Origin"] = "*"
+        resp["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp["Access-Control-Allow-Headers"] = "*"
+        return resp
+
+    def options(self, request, patient_id: str):
+        """Handle CORS preflight requests."""
+        from django.http import HttpResponse
+        resp = HttpResponse()
+        resp["Access-Control-Allow-Origin"] = "*"
+        resp["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp["Access-Control-Allow-Headers"] = "*"
         return resp
 
 
