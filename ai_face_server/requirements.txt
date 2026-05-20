@@ -4,6 +4,6 @@ python-multipart
 face-recognition
 dlib-bin
 numpy
-opencv-python
+opencv-python-headless
 scikit-learn
 joblib
