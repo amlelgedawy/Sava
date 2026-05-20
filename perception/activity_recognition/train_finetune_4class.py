@@ -37,10 +37,10 @@ CLASS_WEIGHTS = {"EAT": 2.0}
 # ----------------------------
 SEED = 1
 EPOCHS = 20
-BATCH_SIZE = 16
+BATCH_SIZE = 4
 LR = 1e-4
 WEIGHT_DECAY = 1e-2
-NUM_WORKERS = 2
+NUM_WORKERS = 0
 VAL_RATIO = 0.2
 
 # Cap matches the natural ceiling of minority classes (FALL/SLEEP ~990 available train windows)
@@ -205,6 +205,10 @@ def main():
     set_seed(SEED)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Device:", device)
+    if device == "cuda":
+        import os
+        os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        torch.cuda.empty_cache()
 
     train_items, val_items = build_split()
 
@@ -218,14 +222,14 @@ def main():
         batch_size=BATCH_SIZE,
         sampler=sampler,
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=BATCH_SIZE,
         shuffle=False,
         num_workers=NUM_WORKERS,
-        pin_memory=True
+        pin_memory=False
     )
 
     model = build_model(device)
