@@ -1,8 +1,2 @@
 [build]
 builder = "DOCKERFILE"
-
-[deploy]
-startCommand = ""
-healthcheckPath = "/api/health"
-restartPolicyType = "on_failure"
-healthcheckTimeout = 120
