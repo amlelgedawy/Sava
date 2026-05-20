@@ -19,7 +19,14 @@ from config import (
 from detector import detect_person
 from pose_estimator import PoseEstimator
 from object_detector import DangerousObjectDetector
-from ..emotion_recognition.pain_classifier import PainClassifier
+# Try to import PainClassifier (may fail in Docker due to relative imports)
+try:
+    from ..emotion_recognition.pain_classifier import PainClassifier
+except ImportError:
+    try:
+        from emotion_recognition.pain_classifier import PainClassifier
+    except ImportError:
+        PainClassifier = None
 
 # ----------------------------
 # SkateFormer paths & config
@@ -670,7 +677,13 @@ def run_camera():
             print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
     # emotion_det = EmotionDetector(device)   # dropped — lowest priority
     # pain_det    = PainDetector()            # commented — PSPI fusion later
-    pain_clf = PainClassifier(PAIN_MODEL_PATH, device)
+    pain_clf = None
+    if PainClassifier is not None:
+        try:
+            pain_clf = PainClassifier(PAIN_MODEL_PATH, device)
+            print(" Pain classifier loaded.")
+        except Exception as e:
+            print(f" Pain classifier not available: {e}")
 
     cap      = initialize_camera()
     recorder = initialize_recorder()
@@ -787,8 +800,11 @@ def run_camera():
             if h < 192 or w < 192:
                 face_crop = cv2.resize(face_crop, (224, 224))
             # last_pspi, _ = pain_det.process(face_crop)  # PSPI — commented for future fusion
-            if frame_count % PAIN_FRAME_INTERVAL == 0:
-                last_pain_prob = pain_clf.predict(face_crop)
+            if frame_count % PAIN_FRAME_INTERVAL == 0 and pain_clf is not None:
+                try:
+                    last_pain_prob = pain_clf.predict(face_crop)
+                except Exception:
+                    last_pain_prob = None
 
         # ----------------------------------------------------------------
         # Overlay rendering
