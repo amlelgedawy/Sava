@@ -1,0 +1,7 @@
+flask
+flask-cors
+waitress
+ultralytics
+pillow
+numpy
+opencv-python
