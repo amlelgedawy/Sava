@@ -3,8 +3,16 @@ import 'package:flutter/material.dart';
 class Medication {
   final String name;
   final String time;
+  final String dosage;
+  final String notes;
   bool isTaken;
-  Medication({required this.name, required this.time, this.isTaken = false});
+  Medication({
+    required this.name,
+    required this.time,
+    this.dosage = '',
+    this.notes = '',
+    this.isTaken = false,
+  });
 }
 
 class ActivityLog {

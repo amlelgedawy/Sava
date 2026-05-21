@@ -5,6 +5,7 @@ import '../../app_state.dart';
 import '../../models/patient_models.dart';
 import '../../models/user_models.dart';
 import '../../services/api_service.dart';
+import '../../services/database_service.dart';
 
 class MedicineSchedulePage extends StatefulWidget {
   const MedicineSchedulePage({super.key});
@@ -29,12 +30,15 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
   void initState() {
     super.initState();
     _checkIfPrimaryRelative();
+    DatabaseService.fetchMedicationSchedule();
     AppState.patientId.addListener(_checkIfPrimaryRelative);
+    AppState.patientId.addListener(DatabaseService.fetchMedicationSchedule);
   }
 
   @override
   void dispose() {
     AppState.patientId.removeListener(_checkIfPrimaryRelative);
+    AppState.patientId.removeListener(DatabaseService.fetchMedicationSchedule);
     super.dispose();
   }
 
@@ -59,6 +63,27 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
     } catch (_) {
       // Ignore errors, default to read-only
     }
+  }
+
+  Future<void> _saveToApi(List<Medication> meds) async {
+    final patientId = AppState.patientId.value;
+    final userId = AppState.userId.value;
+    if (patientId == null || userId == null) return;
+    try {
+      await ApiService.saveMedicationSchedule(
+        patientId: patientId,
+        userId: userId,
+        entries: meds
+            .map((m) => {
+                  'medicine_name': m.name,
+                  'time_to_consume': m.time,
+                  'dosage': m.dosage,
+                  'notes': m.notes,
+                })
+            .toList(),
+      );
+      await DatabaseService.fetchMedicationSchedule();
+    } catch (_) {}
   }
 
   void _showAddDialog() {
@@ -150,11 +175,13 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                           : h;
                   final timeStr =
                       '${hh.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $period';
-                  AppState.allMedications.value = [
+                  final updated = [
                     ...AppState.allMedications.value,
                     Medication(name: nameCtrl.text.trim(), time: timeStr),
                   ];
+                  AppState.allMedications.value = updated;
                   Navigator.pop(ctx);
+                  _saveToApi(updated);
                 },
                 child: Container(
                   width: double.infinity,
@@ -203,6 +230,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
     final updated = List<Medication>.from(AppState.allMedications.value);
     updated.removeAt(index);
     AppState.allMedications.value = updated;
+    _saveToApi(updated);
   }
 
   void _toggleTaken(int index) {
@@ -287,8 +315,8 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                     valueListenable: AppState.patientName,
                     builder: (_, name, __) => Text(
                       'Patient: $name',
-                      style: const TextStyle(
-                          color: SovaColors.sage, fontSize: 14),
+                      style:
+                          const TextStyle(color: SovaColors.sage, fontSize: 14),
                     ),
                   );
                 },
@@ -298,7 +326,8 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                 child: ValueListenableBuilder<String?>(
                   valueListenable: AppState.patientId,
                   builder: (_, patientId, __) {
-                    final hasPatient = patientId != null && patientId.isNotEmpty;
+                    final hasPatient =
+                        patientId != null && patientId.isNotEmpty;
                     if (!hasPatient) return _noPatientState();
                     return ValueListenableBuilder<List<Medication>>(
                       valueListenable: AppState.allMedications,
@@ -309,8 +338,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 const Icon(Icons.medication_outlined,
-                                    size: 64,
-                                    color: SovaColors.sensorNeutral),
+                                    size: 64, color: SovaColors.sensorNeutral),
                                 const SizedBox(height: 16),
                                 const Text('No medications added',
                                     style: TextStyle(
@@ -318,8 +346,7 @@ class _MedicineSchedulePageState extends State<MedicineSchedulePage> {
                                         fontWeight: FontWeight.w600)),
                                 if (!_isReadOnly) ...[
                                   const SizedBox(height: 8),
-                                  const Text(
-                                      'Tap + to add a medication',
+                                  const Text('Tap + to add a medication',
                                       style: TextStyle(
                                           color: SovaColors.sage,
                                           fontSize: 13)),

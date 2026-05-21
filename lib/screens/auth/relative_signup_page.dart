@@ -38,7 +38,7 @@ class _RelativeSignupPageState extends State<RelativeSignupPage> {
   bool _myVideoRecorded = false;
   bool _myRecording = false;
   int _myCountdown = 13;
-  String _aiUrl = "http://10.0.2.2:5000";
+  String _aiUrl = "https://face-recognition-production-e71d.up.railway.app";
   XFile? _recordedVideo;
 
   @override
@@ -171,14 +171,18 @@ class _RelativeSignupPageState extends State<RelativeSignupPage> {
 
       // Upload face video to AI server
       if (_recordedVideo != null) {
-        final bytes = await _recordedVideo!.readAsBytes();
-        final name = _nameCtrl.text.trim().toLowerCase();
-        final req =
-            http.MultipartRequest('POST', Uri.parse('$_aiUrl/enroll-relative'));
-        req.files.add(http.MultipartFile.fromBytes('video', bytes,
-            filename: 'recording.mp4'));
-        req.fields['person_name'] = name;
-        await req.send();
+        try {
+          final bytes = await _recordedVideo!.readAsBytes();
+          final name = _nameCtrl.text.trim().toLowerCase();
+          final req = http.MultipartRequest(
+              'POST', Uri.parse('$_aiUrl/enroll-relative'));
+          req.files.add(http.MultipartFile.fromBytes('video', bytes,
+              filename: 'recording.mp4'));
+          req.fields['person_name'] = name;
+          await req.send().timeout(const Duration(seconds: 10));
+        } catch (_) {
+          // Video upload failed, continue anyway
+        }
       }
 
       DatabaseService.startAlertPollingForUser(id);
