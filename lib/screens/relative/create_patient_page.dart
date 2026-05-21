@@ -34,7 +34,7 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
   bool _videoRecorded = false;
   bool _recording = false;
   int _countdown = 13;
-  String _aiUrl = "http://10.0.2.2:5000";
+  String _aiUrl = "https://face-recognition-production-e71d.up.railway.app";
   XFile? _recordedVideo;
 
   @override
@@ -158,9 +158,8 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
         name: _nameCtrl.text.trim(),
         dateOfBirth: dobStr,
         gender: _gender,
-        currentMedication: _medCtrl.text.trim().isNotEmpty
-            ? _medCtrl.text.trim()
-            : null,
+        currentMedication:
+            _medCtrl.text.trim().isNotEmpty ? _medCtrl.text.trim() : null,
       );
 
       final patientId = patient['id'].toString();
@@ -402,8 +401,7 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
                 color: SovaColors.coral)
           else
             _primaryBtn(
-                'Re-record',
-                () => setState(() => _videoRecorded = false),
+                'Re-record', () => setState(() => _videoRecorded = false),
                 color: SovaColors.navy),
           const Spacer(),
           _primaryBtn(
