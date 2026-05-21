@@ -79,18 +79,24 @@ class _VisionPageState extends State<VisionPage> {
               valueListenable: AppState.patientId,
               builder: (_, patientId, __) {
                 if (patientId == null || patientId.isEmpty) {
-                  return const Center(
-                    child: Text('No patient selected',
-                        style: TextStyle(color: Colors.white)),
+                  return const _StreamMessage(
+                    icon: Icons.person_off_outlined,
+                    title: 'No patient selected',
+                    subtitle:
+                        'Select a patient to view their live monitoring feed.',
                   );
                 }
                 return Image.network(
                   '${ApiService.snapshotUrl(patientId)}?t=$_snapshotTick',
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Text('Waiting for stream...',
-                        style: TextStyle(color: Colors.white)),
+                  errorBuilder: (_, __, ___) => const _StreamMessage(
+                    icon: Icons.videocam_off_outlined,
+                    title: 'Waiting for stream…',
+                    subtitle:
+                        'The monitoring camera is offline. Video appears here '
+                        'as soon as the camera starts streaming.',
+                    showSpinner: true,
                   ),
                 );
               },
@@ -700,6 +706,64 @@ class _InfoOverlay extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  _StreamMessage — full-screen placeholder when the live feed is unavailable
+// ─────────────────────────────────────────────────────────────────────────────
+class _StreamMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showSpinner;
+
+  const _StreamMessage({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showSpinner = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white38, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 44),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white54, fontSize: 13),
+            ),
+          ),
+          if (showSpinner) ...[
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white38,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
