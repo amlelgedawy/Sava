@@ -7,8 +7,8 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  //static const String _baseUrl = "http://10.0.2.2:8000/api";
-  static const String _baseUrl = "https://sava-production.up.railway.app/api";
+  static const String _baseUrl = "http://10.0.2.2:8000/api";
+  //static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server
   //static const String _objectDetectionUrl = "http://10.0.2.2:5002";
@@ -316,6 +316,26 @@ class ApiService {
   }
 
   // MEDICATION
+
+/// PUT /api/patients/<patient_id>/medication
+
+  static Future<Map<String, dynamic>> saveMedicationSchedule({
+    required String patientId,
+    required String userId,
+    required List<Map<String, dynamic>> entries,
+  }) async{
+    final resp = await http.put(
+      Uri.parse('$_baseUrl/patients/$patientId/medication'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'user_id': userId,
+        'entries': entries,
+      }),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
+    if (resp.statusCode == 200) return data;
+    throw data['detail'] ?? 'Failed to save medication schedule(${resp.statusCode})';
+  }
 
   /// GET /api/patients/<patient_id>/medication
   static Future<Map<String, dynamic>?> getMedicationSchedule(

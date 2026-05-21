@@ -175,8 +175,28 @@ class DatabaseService {
   }
 
   static void refreshDashboard() {
-    AppState.allMedications.value = List.from(_meds);
+    fetchMedicationSchedule();
     AppState.allActivityLogs.value = List.from(_logs);
+    AppState.lastActivity.value = _logs.isEmpty ? null : _logs.last;
+  }
+
+  static Future<void> fetchMedicationSchedule() async {
+    final patientId = AppState.patientId.value;
+    if (patientId == null || patientId.isEmpty) return;
+    try {
+      final data = await ApiService.getMedicationSchedule(patientId);
+      final rawEntries = (data?['entries'] as List<dynamic>?) ?? [];
+      _meds.clear();
+      for (final e in rawEntries) {
+        _meds.add(Medication(
+          name: e['medicine_name'] as String? ?? '',
+          time: e['time_to_consume'] as String? ?? '',
+          dosage: e['dosage'] as String? ?? '',
+          notes: e['notes'] as String? ?? '',
+        ));
+      }
+    } catch (_) {}
+    AppState.allMedications.value = List.from(_meds);
     final now = DateTime.now();
     final nowMin = (now.hour * 60) + now.minute;
     try {
@@ -186,7 +206,6 @@ class DatabaseService {
     } catch (_) {
       AppState.nextMedication.value = _meds.isNotEmpty ? _meds.first : null;
     }
-    AppState.lastActivity.value = _logs.isEmpty ? null : _logs.last;
   }
 
   static Future<void> fetchActivityHistory() async {
