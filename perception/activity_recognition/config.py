@@ -31,7 +31,10 @@ PAIN_MODEL_PATH = _os.path.join(
     _os.path.dirname(_os.path.abspath(__file__)),
     "..", "emotion_recognition", "pain_efficientnet_b0.pt"
 )
-PAIN_FRAME_INTERVAL = 3     # run classifier every N frames (~5 FPS at 15 FPS capture)
+PAIN_FRAME_INTERVAL  = 3    # run pain detector every N frames (~5 FPS at 15 FPS capture)
+PAIN_BASELINE_FRAMES = 20   # frames used to calibrate neutral PSPI
+PAIN_ALERT_THRESH    = 30   # pain % above which alert fires
+PAIN_ALERT_PERSIST   = 10   # consecutive frames above thresh before alert triggers (~0.67 s)
 
 # Accelerometer (MPU-6050 via I2C — wrist placement on Raspberry Pi 5)
 ACCEL_ENABLED              = True
