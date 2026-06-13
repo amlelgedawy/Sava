@@ -35,6 +35,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image, ImageOps
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 # Reuse existing pipeline components
 from pose_estimator import PoseEstimator
 from camera import (

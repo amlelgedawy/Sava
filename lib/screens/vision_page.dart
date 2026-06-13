@@ -111,29 +111,23 @@ class _VisionPageState extends State<VisionPage> {
               ),
             ),
 
-          // ── 3. FACE RECOGNITION AR BOXES (GREEN/RED) ─────────────────────
-          if (_streamReady)
-            Positioned.fill(
-              child: ValueListenableBuilder<List<DetectedFace>>(
-                valueListenable: AppState.detectedFaces,
-                builder: (context, faces, _) {
-                  if (faces.isEmpty) return const SizedBox();
-                  return CustomPaint(
-                    painter: _FaceBoxPainter(faces: faces),
-                  );
-                },
-              ),
-            ),
-
-          // ── 3b. PERSON BOUNDING BOXES (CYAN) from activity server ────────
+          // ── 3. PERSON BOUNDING BOXES (labeled with recognized name) ──────
           if (_streamReady)
             Positioned.fill(
               child: ValueListenableBuilder<ActivityResult>(
                 valueListenable: AppState.activityResult,
                 builder: (context, result, _) {
                   if (result.personBoxes.isEmpty) return const SizedBox();
-                  return CustomPaint(
-                    painter: _PersonBoxPainter(boxes: result.personBoxes),
+                  return ValueListenableBuilder<List<DetectedFace>>(
+                    valueListenable: AppState.detectedFaces,
+                    builder: (context, faces, _) {
+                      return CustomPaint(
+                        painter: _PersonBoxPainter(
+                          boxes: result.personBoxes,
+                          face: faces.isNotEmpty ? faces.first : null,
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -343,109 +337,22 @@ class _ObjectBoxPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _FaceBoxPainter — GREEN for known faces, RED for unknown faces
+//  _PersonBoxPainter — boxes for YOLO person detections (activity server),
+//  labeled with the recognized name (GREEN known / RED unknown) once a face
+//  result is available, falling back to a generic CYAN "PERSON" label.
 // ─────────────────────────────────────────────────────────────────────────────
-class _FaceBoxPainter extends CustomPainter {
-  final List<DetectedFace> faces;
-
-  const _FaceBoxPainter({required this.faces});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final face in faces) {
-      final color =
-          face.isKnown ? const Color(0xFF00E676) : const Color(0xFFFF1744);
-
-      final double x1 = face.left * size.width;
-      final double y1 = face.top * size.height;
-      final double x2 = face.right * size.width;
-      final double y2 = face.bottom * size.height;
-      final Rect box = Rect.fromLTRB(x1, y1, x2, y2);
-
-      // Glow
-      canvas.drawRect(
-        box,
-        Paint()
-          ..color = color.withOpacity(0.22)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 8
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-
-      // Box
-      canvas.drawRect(
-        box,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
-
-      _drawCorners(canvas, box, color);
-
-      final label =
-          face.isKnown ? (face.name ?? 'Known').toUpperCase() : 'UNKNOWN';
-      _drawLabel(canvas, label, color, Offset(x1, y2 + 6));
-    }
-  }
-
-  void _drawCorners(Canvas canvas, Rect box, Color color) {
-    final p = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.square;
-    const double L = 14.0;
-    canvas.drawLine(box.topLeft, box.topLeft + const Offset(L, 0), p);
-    canvas.drawLine(box.topLeft, box.topLeft + const Offset(0, L), p);
-    canvas.drawLine(box.topRight, box.topRight + const Offset(-L, 0), p);
-    canvas.drawLine(box.topRight, box.topRight + const Offset(0, L), p);
-    canvas.drawLine(box.bottomLeft, box.bottomLeft + const Offset(L, 0), p);
-    canvas.drawLine(box.bottomLeft, box.bottomLeft + const Offset(0, -L), p);
-    canvas.drawLine(box.bottomRight, box.bottomRight + const Offset(-L, 0), p);
-    canvas.drawLine(box.bottomRight, box.bottomRight + const Offset(0, -L), p);
-  }
-
-  void _drawLabel(Canvas canvas, String text, Color color, Offset pos) {
-    final tp = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-          shadows: const [
-            Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1)),
-          ],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(pos.dx - 4, pos.dy - 2, tp.width + 8, tp.height + 4),
-        const Radius.circular(4),
-      ),
-      Paint()..color = Colors.black.withOpacity(0.55),
-    );
-    tp.paint(canvas, pos);
-  }
-
-  @override
-  bool shouldRepaint(covariant _FaceBoxPainter old) => old.faces != faces;
-}
-
-//  _PersonBoxPainter — CYAN boxes for YOLO person detections (activity server)
 class _PersonBoxPainter extends CustomPainter {
   final List<DetectedObject> boxes;
+  final DetectedFace? face;
 
-  const _PersonBoxPainter({required this.boxes});
+  const _PersonBoxPainter({required this.boxes, this.face});
 
   @override
   void paint(Canvas canvas, Size size) {
-    const Color color = Color(0xFF00E5FF); // cyan
+    final Color color = face == null
+        ? const Color(0xFF00E5FF) // cyan — no face result yet
+        : (face!.isKnown ? const Color(0xFF00E676) : const Color(0xFFFF1744));
+
     for (final box in boxes) {
       final double x1 = box.left * size.width;
       final double y1 = box.top * size.height;
@@ -453,7 +360,7 @@ class _PersonBoxPainter extends CustomPainter {
       final double y2 = box.bottom * size.height;
       final Rect rect = Rect.fromLTRB(x1, y1, x2, y2);
 
-      // Dashed-style border via two paints
+      // Glow
       canvas.drawRect(
         rect,
         Paint()
@@ -462,6 +369,7 @@ class _PersonBoxPainter extends CustomPainter {
           ..strokeWidth = 6
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
       );
+      // Box
       canvas.drawRect(
         rect,
         Paint()
@@ -470,10 +378,13 @@ class _PersonBoxPainter extends CustomPainter {
           ..strokeWidth = 2.5,
       );
 
-      // Label
+      final String label = face != null
+          ? (face!.isKnown ? (face!.name ?? 'KNOWN').toUpperCase() : 'UNKNOWN')
+          : 'PERSON ${(box.confidence * 100).toStringAsFixed(0)}%';
+
       final tp = TextPainter(
         text: TextSpan(
-          text: 'PERSON ${(box.confidence * 100).toStringAsFixed(0)}%',
+          text: label,
           style: const TextStyle(
             color: Colors.white,
             fontSize: 11,
@@ -494,7 +405,8 @@ class _PersonBoxPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PersonBoxPainter old) => old.boxes != boxes;
+  bool shouldRepaint(covariant _PersonBoxPainter old) =>
+      old.boxes != boxes || old.face != face;
 }
 
 //  _AiStatusBadge

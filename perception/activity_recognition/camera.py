@@ -9,6 +9,8 @@ import numpy as np
 import torch
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
     TARGET_FPS, ENABLE_RECORDING, OUTPUT_VIDEO_NAME,
@@ -895,4 +897,4 @@ def run_camera():
         recorder.release()
     if not HEADLESS_MODE:
         cv2.destroyAllWindows()
-    print("🛑 Camera stopped cleanly.")
+    print(" Camera stopped cleanly.")

@@ -9,12 +9,20 @@ from apps.monitoring.models import Alert
 from apps.monitoring.serializers import AlertUpdateSerializer
 
 
+def _ref_id(doc, field_name):
+    try:
+        ref = getattr(doc, field_name)
+        return str(ref.id) if ref else None
+    except DoesNotExist:
+        return None
+
+
 def _serialize_alert(a: Alert) -> dict:
     return {
         "id": str(a.id),
-        "patient_id": str(a.patient.id) if a.patient else None,
-        "recipient_id": str(a.recipient.id) if a.recipient else None,
-        "event_id": str(a.event.id) if a.event else None,
+        "patient_id": _ref_id(a, "patient"),
+        "recipient_id": _ref_id(a, "recipient"),
+        "event_id": _ref_id(a, "event"),
         "alert_type": a.alert_type,
         "message": a.message,
         "status": a.status,
