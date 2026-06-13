@@ -1,5 +1,2 @@
 [build]
 builder = "DOCKERFILE"
-
-[deploy]
-numReplicas = 1

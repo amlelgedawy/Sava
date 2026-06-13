@@ -36,15 +36,15 @@ from flask_cors import CORS
 from PIL import Image, ImageOps
 
 # Reuse existing pipeline components
-from .pose_estimator import PoseEstimator
-from .camera import (
+from pose_estimator import PoseEstimator
+from camera import (
     CLASS_NAMES,
     _load_model,
     _predict,
     WanderingDetector,
 )
-from perception.object_detection import DangerousObjectDetector
-from .config import TARGET_FPS
+from object_detector import DangerousObjectDetector
+from config import TARGET_FPS
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("ACTIVITY_SERVER_PORT", "5003"))
@@ -65,11 +65,8 @@ print(f"[ActivityServer] Device: {device}")
 # Load shared models once at startup
 print("[ActivityServer] Loading YOLO person detector...")
 from ultralytics import YOLO
-_yolo_path = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "yolov8n.pt",
-)
-yolo = YOLO(_yolo_path)
+# Use yolov8n.pt - will auto-download from Ultralytics if not present
+yolo = YOLO("yolov8n.pt")
 
 print("[ActivityServer] Loading SkateFormer activity model...")
 skateformer_model = _load_model(device)

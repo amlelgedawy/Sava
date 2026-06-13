@@ -7,16 +7,20 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://10.0.2.2:8000/api";
+  //static const String _baseUrl = "http://10.0.2.2:8000/api";
+  static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server
-  static const String _objectDetectionUrl = "http://10.0.2.2:5002";
+  //static const String _objectDetectionUrl = "http://10.0.2.2:5002";
+  static const String _objectDetectionUrl = "https://object-detection-production-7fe6.up.railway.app";
 
   // Face recognition server
-  static const String _faceAiUrl = "http://10.0.2.2:5000";
+  //static const String _faceAiUrl = "http://10.0.2.2:5000";
+   static const String _faceAiUrl = "https://face-recognition-production-e71d.up.railway.app";
 
   // Activity recognition server
-  static const String _activityServerUrl = "http://10.0.2.2:5003";
+  //static const String _activityServerUrl = "http://10.0.2.2:5003";
+  static const String _activityServerUrl = "https://activity-recognition-production.up.railway.app";
 
   // AUTH
 
@@ -676,6 +680,44 @@ class ApiService {
         AppState.alertStatus.value == AlertType.wandering ||
         AppState.alertStatus.value == AlertType.sharpObject) {
       AppState.alertStatus.value = AlertType.none;
+    }
+  }
+
+  // PI STREAM + LIVE DETECTIONS
+
+  /// MJPEG stream URL (browser-only; Flutter Image.network can't decode it)
+  static String streamUrl(String patientId) =>
+      '$_baseUrl/stream/live/$patientId';
+
+  /// Single JPEG snapshot URL for Flutter to poll (~10fps)
+  static String snapshotUrl(String patientId) =>
+      '$_baseUrl/stream/snapshot/$patientId';
+
+  /// Polls latest cached AI detections for the patient and updates AppState.
+  /// Called periodically by VisionPage while viewing the live feed.
+  static Future<void> fetchLatestDetections(String patientId) async {
+    try {
+      final resp = await http.get(
+        Uri.parse('$_baseUrl/stream/latest-detections/$patientId'),
+      );
+      if (resp.statusCode != 200) return;
+      final data = json.decode(resp.body) as Map<String, dynamic>;
+
+      final activity = data['ACTIVITY_SERVER'] as Map<String, dynamic>?;
+      if (activity != null) {
+        _handleActivityResponse(json.encode(activity));
+      } else {
+        AppState.activityResult.value = ActivityResult.empty;
+      }
+
+      final face = data['FACE_SERVER'] as Map<String, dynamic>?;
+      if (face != null) {
+        _handleFaceResponse(json.encode(face));
+      } else {
+        AppState.detectedFaces.value = [];
+      }
+    } catch (e) {
+      debugPrint('[fetchLatestDetections] error: $e');
     }
   }
 

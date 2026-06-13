@@ -9,7 +9,7 @@ import numpy as np
 import torch
 import requests
 
-from .config import (
+from config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
     TARGET_FPS, ENABLE_RECORDING, OUTPUT_VIDEO_NAME,
     WANDERING_TORTUOSITY_THRESHOLD, WANDERING_BUFFER_FRAMES,
@@ -17,9 +17,9 @@ from .config import (
     PAIN_ALERT_THRESH, PAIN_ALERT_PERSIST,
     ACCEL_ENABLED, HEADLESS_MODE,
 )
-from .detector import detect_person
-from .pose_estimator import PoseEstimator
-from perception.object_detection import DangerousObjectDetector
+from detector import detect_person
+from pose_estimator import PoseEstimator
+from object_detector import DangerousObjectDetector
 from ..emotion_recognition.pain_classifier import PainClassifier
 from ..emotion_recognition.pain_detector import PainDetector
 
