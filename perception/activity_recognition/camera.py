@@ -13,13 +13,15 @@ from .config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT,
     TARGET_FPS, ENABLE_RECORDING, OUTPUT_VIDEO_NAME,
     WANDERING_TORTUOSITY_THRESHOLD, WANDERING_BUFFER_FRAMES,
-    WANDERING_MIN_WALK_SECONDS, PAIN_MODEL_PATH, PAIN_FRAME_INTERVAL,
+    WANDERING_MIN_WALK_SECONDS, PAIN_MODEL_PATH, PAIN_FRAME_INTERVAL, PAIN_BASELINE_FRAMES,
+    PAIN_ALERT_THRESH, PAIN_ALERT_PERSIST,
     ACCEL_ENABLED, HEADLESS_MODE,
 )
 from .detector import detect_person
 from .pose_estimator import PoseEstimator
 from perception.object_detection import DangerousObjectDetector
 from ..emotion_recognition.pain_classifier import PainClassifier
+from ..emotion_recognition.pain_detector import PainDetector
 
 # ----------------------------
 # SkateFormer paths & config
@@ -181,13 +183,14 @@ FACE_RECOGNITION_INTERVAL = 5
 # Cooldowns for activity alerts (seconds)
 _ALERT_COOLDOWNS = {
     "FALL": 30,
+    "PAIN": 60,
     "WANDERING": 120,
     "DANGEROUS_OBJECT": 60,
 }
 _last_alert_time = {}
 
 # Critical events that should be queued when patient_id is not yet available
-_CRITICAL_ACTIVITIES = {"FALL"}
+_CRITICAL_ACTIVITIES = {"FALL", "PAIN"}
 _pending_events = []          # list of dicts queued while patient_id is None
 _PENDING_MAX = 20             # cap to avoid unbounded memory growth
 _pending_lock = threading.Lock()
@@ -669,7 +672,7 @@ def run_camera():
         except Exception as e:
             print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
     # emotion_det = EmotionDetector(device)   # dropped — lowest priority
-    # pain_det    = PainDetector()            # commented — PSPI fusion later
+    pain_det = PainDetector(PAIN_BASELINE_FRAMES)
     pain_clf = PainClassifier(PAIN_MODEL_PATH, device)
 
     cap      = initialize_camera()
@@ -685,6 +688,7 @@ def run_camera():
     fall_consec    = 0
     drink_consec   = 0
     last_pain_prob = None   # float 0-100 or None when model not trained
+    pain_consec    = 0
     frame_count    = 0
     SMOOTH_WINDOW      = 15
     CONFIDENCE_THRESH  = 0.75   # raised from 0.60 to cut wrong guesses
@@ -765,6 +769,15 @@ def run_camera():
         current_pid = identifier.patient_id
         if last_pred == "FALL":
             _send_activity_event(current_pid, "FALL", last_conf)
+
+        # Pain alert persistence counter (same pattern as fall detection)
+        if last_pain_prob is not None and last_pain_prob >= PAIN_ALERT_THRESH:
+            pain_consec += 1
+        else:
+            pain_consec = 0
+        if pain_consec >= PAIN_ALERT_PERSIST:
+            _send_activity_event(current_pid, "PAIN", last_pain_prob / 100.0)
+
         if wandering.is_wandering:
             walk_secs = wandering._walk_frames / TARGET_FPS
             _send_activity_event(current_pid, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
@@ -779,16 +792,16 @@ def run_camera():
         fps       = 1.0 / elapsed if elapsed > 0 else 0
         prev_time = current_time
 
-        # 5️⃣ Pain Detection — EfficientNet-B0 classifier on YOLO face crop
+        # 5️⃣ Pain Detection — py-feat AU detector on full frame (finds face itself)
+        #    Falls back to EfficientNet-B0 when pain_efficientnet_b0.pt is available.
         frame_count += 1
-        face_crop = _face_crop_from_bbox(frame, person_bbox)
-        if face_crop is not None:
-            h, w = face_crop.shape[:2]
-            if h < 192 or w < 192:
-                face_crop = cv2.resize(face_crop, (224, 224))
-            # last_pspi, _ = pain_det.process(face_crop)  # PSPI — commented for future fusion
-            if frame_count % PAIN_FRAME_INTERVAL == 0:
-                last_pain_prob = pain_clf.predict(face_crop)
+        if frame_count % PAIN_FRAME_INTERVAL == 0:
+            if pain_clf._model is not None:
+                face_crop = _face_crop_from_bbox(frame, person_bbox)
+                if face_crop is not None:
+                    last_pain_prob = pain_clf.predict(face_crop)
+            else:
+                last_pain_prob = pain_det.predict(frame)
 
         # ----------------------------------------------------------------
         # Overlay rendering
@@ -829,12 +842,17 @@ def run_camera():
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, act_color, 2)
 
         # Pain overlay
-        if last_pain_prob is not None:
-            cv2.putText(frame, f"Pain: {last_pain_prob:.0f}%",
-                        (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (200, 200, 200), 2)
+        if pain_det.calibrating:
+            pain_text  = f"Pain: calibrating... ({pain_det.calibration_count}/{PAIN_BASELINE_FRAMES})"
+            pain_color = (100, 100, 100)
+        elif last_pain_prob is not None:
+            pain_text  = f"Pain: {last_pain_prob:.0f}%"
+            pain_color = (200, 200, 200)
         else:
-            cv2.putText(frame, "Pain: -- (model not trained)",
-                        (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (100, 100, 100), 2)
+            pain_text  = "Pain: --"
+            pain_color = (100, 100, 100)
+        cv2.putText(frame, pain_text, (10, 130),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, pain_color, 2)
 
         # Wandering alert
         if wandering.is_wandering:
@@ -850,6 +868,11 @@ def run_camera():
         if (camera_fall and accel_impact) or accel_alone:
             cv2.putText(frame, "FALL DETECTED", (10, 200),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
+
+        # Pain alert
+        if pain_consec >= PAIN_ALERT_PERSIST:
+            cv2.putText(frame, "PAIN DETECTED", (10, 235),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 100, 255), 3)
 
         # Dangerous object overlays (bounding boxes + labels on frame)
         if obj_detector.is_loaded and obj_detector.last_detections:
@@ -874,7 +897,7 @@ def run_camera():
     pose_est.close()
     if accel:
         accel.stop()
-    # pain_det.close()   # commented — PSPI fusion later
+    pain_det.close()
     if recorder:
         recorder.release()
     if not HEADLESS_MODE:

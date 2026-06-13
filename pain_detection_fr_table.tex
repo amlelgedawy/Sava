@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+\centering
+\caption{Pain Detection through Facial Expression}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|p{3.5cm}|p{10cm}|}
+\hline
+\textbf{Name} & Pain Detection through Facial Expression \\ \hline
+\textbf{Code} & FR-32 \\ \hline
+\textbf{Priority} & High \\ \hline
+\textbf{Critical} & Essential for early detection of patient discomfort that the patient cannot verbally report \\ \hline
+\textbf{Description} & Continuously analyses the patient's facial expressions using a pretrained Action Unit (AU) detector to compute the Prkachin and Solomon Pain Intensity (PSPI) score in real time. A per-session baseline calibration establishes the patient's neutral expression, after which deviations are normalised into a 0--100\% pain probability. A smile-suppression mechanism based on the lip-corner-puller AU prevents positive expressions from being misclassified as pain. An alert is generated when the pain probability exceeds a defined threshold for a sustained period. \\ \hline
+\textbf{Input} & Video feed \\ \hline
+\textbf{Output} & Pain probability (0--100\%), pain alert \\ \hline
+\textbf{Pre-condition} & Active video feed from FR-01; per-session baseline calibration completed \\ \hline
+\textbf{Post-condition} & Pain level displayed and logged with timestamp; alert dispatched if sustained above threshold \\ \hline
+\textbf{Dependency} & FR-01, FR-17 \\ \hline
+\textbf{Risk} & Elevated or angled camera placement and varying lighting may reduce AU detection accuracy, mitigated through full-frame face detection and per-session baseline calibration \\ \hline
+\end{tabular}
+\end{table}
