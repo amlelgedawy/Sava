@@ -151,26 +151,33 @@ class DatabaseService {
           return;
         }
         final String type = alerts[0]['alert_type'].toString().toUpperCase();
+        AlertType newType;
         switch (type) {
           case 'FALL':
-            AppState.alertStatus.value = AlertType.fall;
+            newType = AlertType.fall;
             break;
           case 'OBJECT':
           case 'DANGEROUS_OBJECT':
-            AppState.alertStatus.value = AlertType.sharpObject;
+            newType = AlertType.sharpObject;
             break;
           case 'FACE':
-            AppState.alertStatus.value = AlertType.unknown_face;
+            newType = AlertType.unknown_face;
             break;
           case 'WANDERING':
-            AppState.alertStatus.value = AlertType.wandering;
+            newType = AlertType.wandering;
             break;
           case 'BATHROOM':
-            AppState.alertStatus.value = AlertType.bathroomTimeout;
+            newType = AlertType.bathroomTimeout;
             break;
           default:
-            AppState.alertStatus.value = AlertType.none;
+            newType = AlertType.none;
         }
+        // Log to alert history on transition so AlertsPage stays in sync
+        // with this poller, not just the real-time vision-page path.
+        if (newType != AlertType.none && AppState.alertStatus.value != newType) {
+          AppState.logAlert(newType);
+        }
+        AppState.alertStatus.value = newType;
       }
     } catch (_) {}
   }
