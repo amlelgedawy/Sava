@@ -25,12 +25,14 @@ from object_detector import DangerousObjectDetector
 # Try to import PainClassifier (may fail in Docker due to relative imports)
 try:
     from ..emotion_recognition.pain_classifier import PainClassifier
-from ..emotion_recognition.pain_detector import PainDetector
+    from ..emotion_recognition.pain_detector import PainDetector
 except ImportError:
     try:
         from emotion_recognition.pain_classifier import PainClassifier
+        from emotion_recognition.pain_detector import PainDetector
     except ImportError:
         PainClassifier = None
+        PainDetector = None
 
 # ----------------------------
 # SkateFormer paths & config
