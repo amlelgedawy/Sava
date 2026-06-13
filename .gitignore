@@ -22,6 +22,7 @@ perception/activity_recognition/data/keypoints_v2/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 .dart_tool/
 
