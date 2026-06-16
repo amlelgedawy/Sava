@@ -1,5 +1,5 @@
 # 🧠 SAVA — Smart Alzheimer Virtual Assistant
-**[University Name] — Faculty of [Faculty Name] | Graduation Project [Academic Year]**
+** Misr International University — Faculty of Computer Science | Graduation Project 2025-2026**
 
 Team SWE13 · Mostafa Zakaria · Samer Raef · Nezar Walid · Mohamed Atef . Aml ElGedawy
 Supervisors: Dr. Sarah Nabil · Eng. Fathy Farag
