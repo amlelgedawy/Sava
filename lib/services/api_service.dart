@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -8,8 +7,8 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  //static const String _baseUrl = "http://10.0.2.2:8000/api";
-  static const String _baseUrl = "https://sava-production.up.railway.app/api";
+  static const String _baseUrl = "http://172.20.10.3:8000/api";
+  //static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server
   //static const String _objectDetectionUrl = "http://10.0.2.2:5002";
@@ -23,39 +22,6 @@ class ApiService {
   //static const String _activityServerUrl = "http://10.0.2.2:5003";
   static const String _activityServerUrl = "https://activity-recognition-production.up.railway.app";
 
-  /// Max time to wait for any request before giving up. The deployed Railway
-  /// servers sleep when idle, so the first request after a cold start is slow.
-  static const Duration _timeout = Duration(seconds: 40);
-
-  /// Turns low-level network errors into clear, user-facing messages so the
-  /// app never just hangs or shows a raw exception.
-  static String _networkErrorMessage(Object e) {
-    if (e is TimeoutException) {
-      return 'The server took too long to respond. It may be waking up — '
-          'please try again in a few seconds.';
-    }
-    if (e is SocketException) {
-      return 'No internet connection. Check your network and try again.';
-    }
-    if (e is HandshakeException) {
-      return 'Secure connection to the server failed.';
-    }
-    if (e is http.ClientException || e is HttpException) {
-      return 'Could not reach the server. Please check your connection.';
-    }
-    return e.toString();
-  }
-
-  /// Safely parses a JSON object; throws a friendly message when the server
-  /// returns a non-JSON body (e.g. a 502/503 HTML page during a cold start).
-  static Map<String, dynamic> _decodeObject(http.Response resp) {
-    try {
-      return json.decode(resp.body) as Map<String, dynamic>;
-    } catch (_) {
-      throw 'Server error (${resp.statusCode}). Please try again in a moment.';
-    }
-  }
-
   // AUTH
 
   /// POST /api/auth/login  → returns full user map or throws
@@ -63,26 +29,12 @@ class ApiService {
     required String email,
     required String password,
   }) async {
-    final http.Response resp;
-    try {
-      resp = await http
-          .post(
-            Uri.parse('$_baseUrl/auth/login'),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'email': email, 'password': password}),
-          )
-          .timeout(_timeout);
-    } on TimeoutException catch (e) {
-      throw _networkErrorMessage(e);
-    } on SocketException catch (e) {
-      throw _networkErrorMessage(e);
-    } on HandshakeException catch (e) {
-      throw _networkErrorMessage(e);
-    } on http.ClientException catch (e) {
-      throw _networkErrorMessage(e);
-    }
-
-    final data = _decodeObject(resp);
+    final resp = await http.post(
+      Uri.parse('$_baseUrl/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'email': email, 'password': password}),
+    );
+    final data = json.decode(resp.body) as Map<String, dynamic>;
     if (resp.statusCode == 200) return data;
     throw data['detail'] ?? 'Login failed (${resp.statusCode})';
   }
@@ -149,21 +101,23 @@ class ApiService {
 
   /// GET /api/patients?relative_id=<id>
   static Future<List<dynamic>> getPatientsForRelative(String relativeId) async {
-    final resp = await http
-        .get(Uri.parse('$_baseUrl/patients?relative_id=$relativeId'))
-        .timeout(_timeout);
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/patients?relative_id=$relativeId'),
+    );
     if (resp.statusCode == 200) return json.decode(resp.body) as List;
-    throw _decodeObject(resp)['detail'] ?? 'Failed to fetch patients';
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch patients';
   }
 
   /// GET /api/caregivers/<caregiver_id>/patients
   static Future<List<dynamic>> getPatientsForCaregiver(
       String caregiverId) async {
-    final resp = await http
-        .get(Uri.parse('$_baseUrl/caregivers/$caregiverId/patients'))
-        .timeout(_timeout);
+    final resp = await http.get(
+      Uri.parse('$_baseUrl/caregivers/$caregiverId/patients'),
+    );
     if (resp.statusCode == 200) return json.decode(resp.body) as List;
-    throw _decodeObject(resp)['detail'] ?? 'Failed to fetch patients';
+    throw (json.decode(resp.body) as Map)['detail'] ??
+        'Failed to fetch patients';
   }
 
   /// POST /api/patients  body: {relative_id, name, date_of_birth, gender, current_medication}

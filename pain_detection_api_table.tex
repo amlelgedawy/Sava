@@ -1,0 +1,17 @@
+\begin{table}[htbp]
+\centering
+\caption{py-feat Action Unit Detection API}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{|p{3.5cm}|p{10cm}|}
+\hline
+\textbf{Name} & py-feat (Python Facial Expression Analysis Toolkit) \\ \hline
+\textbf{Version} & 0.6.2 \\ \hline
+\textbf{Type} & Open-source Python library with pretrained models \\ \hline
+\textbf{Purpose} & Provides a pretrained Action Unit (AU) detector used to compute facial Action Unit intensities for the PSPI pain score, eliminating the need for custom dataset collection or model training \\ \hline
+\textbf{Underlying Model} & XGBoost AU classifier (\texttt{au\_model="xgb"}) trained on the BP4D dataset, combined with a RetinaFace face detector for face localisation \\ \hline
+\textbf{Input} & A single video frame, written to a temporary JPEG file and passed to \texttt{Detector.detect\_image()} \\ \hline
+\textbf{Output} & Action Unit intensities on a 0--5 scale for AU04, AU06, AU07, AU09, AU10, AU12, and AU43, together with a face bounding box and detection confidence score \\ \hline
+\textbf{Integration} & Executed in a background daemon thread with a bounded queue so that the activity recognition pipeline is never blocked, since inference takes approximately 2--3 seconds per frame on CPU \\ \hline
+\textbf{Justification} & Removes the dependency on inaccessible pain expression datasets (e.g.\ BioVid, AffectNet); the pretrained AU detector generalises across subjects and tolerates moderate camera angles \\ \hline
+\end{tabular}
+\end{table}

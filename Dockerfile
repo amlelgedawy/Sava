@@ -28,7 +28,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
 # Start command
-# IMPORTANT: keep --workers 1. StreamManager buffers video frames in
-# process-local RAM, so multiple workers can't see each other's frames and the
-# live stream breaks. --threads keeps requests (incl. MJPEG) concurrent.
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "120"]
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]

@@ -35,6 +35,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from PIL import Image, ImageOps
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 # Reuse existing pipeline components
 from pose_estimator import PoseEstimator
 from camera import (
@@ -62,11 +64,20 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"[ActivityServer] Device: {device}")
 
+# Cap CPU threads per inference call — this process shares the machine with
+# Django and the emulator, and unbounded thread pools make every call grab
+# all available cores.
+cv2.setNumThreads(2)
+torch.set_num_threads(2)
+
 # Load shared models once at startup
 print("[ActivityServer] Loading YOLO person detector...")
 from ultralytics import YOLO
 # Use yolov8n.pt - will auto-download from Ultralytics if not present
 yolo = YOLO("yolov8n.pt")
+# Warm up now (single-threaded) so YOLO's lazy fuse() runs here, not
+# racing across waitress's worker threads on the first real request.
+yolo(np.zeros((640, 640, 3), dtype=np.uint8), classes=[0], verbose=False)
 
 print("[ActivityServer] Loading SkateFormer activity model...")
 skateformer_model = _load_model(device)
@@ -74,7 +85,9 @@ skateformer_model = _load_model(device)
 print("[ActivityServer] Loading dangerous object detector...")
 obj_detector = DangerousObjectDetector()
 obj_loaded = obj_detector.load()
-if not obj_loaded:
+if obj_loaded:
+    obj_detector.detect(np.zeros((640, 640, 3), dtype=np.uint8))
+else:
     print("[ActivityServer]   Object detection disabled — model not found.")
 
 

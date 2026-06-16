@@ -67,24 +67,18 @@ class _LoginPageState extends State<LoginPage> {
         }
         AppState.userRole.value = UserRole.caregiver;
         AppState.caregiverId.value = id;
-        // Non-fatal: a failed patient fetch must not undo a successful login.
-        try {
-          final patients = await ApiService.getPatientsForCaregiver(id);
-          if (patients.isNotEmpty) {
-            AppState.patientId.value = patients[0]['id'].toString();
-            AppState.patientName.value = patients[0]['name'] as String? ?? '';
-          }
-        } catch (_) {/* patient list can be loaded later from the dashboard */}
+        final patients = await ApiService.getPatientsForCaregiver(id);
+        if (patients.isNotEmpty) {
+          AppState.patientId.value = patients[0]['id'].toString();
+          AppState.patientName.value = patients[0]['name'] as String? ?? '';
+        }
       } else if (role == 'RELATIVE') {
         AppState.userRole.value = UserRole.relative;
-        // Non-fatal: a failed patient fetch must not undo a successful login.
-        try {
-          final patients = await ApiService.getPatientsForRelative(id);
-          if (patients.isNotEmpty) {
-            AppState.patientId.value = patients[0]['id'].toString();
-            AppState.patientName.value = patients[0]['name'] as String? ?? '';
-          }
-        } catch (_) {/* patient list can be loaded later from the dashboard */}
+        final patients = await ApiService.getPatientsForRelative(id);
+        if (patients.isNotEmpty) {
+          AppState.patientId.value = patients[0]['id'].toString();
+          AppState.patientName.value = patients[0]['name'] as String? ?? '';
+        }
       } else if (role == 'ADMIN') {
         AppState.userRole.value = UserRole.admin;
       }
