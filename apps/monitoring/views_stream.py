@@ -3,6 +3,7 @@
 
 
 import json
+import threading
 from datetime import datetime
 
 from django.conf import settings
@@ -50,8 +51,19 @@ class PushFrameView(APIView):
         # Buffer frame for MJPEG stream
         StreamManager.push_frame(patient_id, jpeg_bytes)
 
-        # Store sensor readings if provided
-        _store_sensor_reading(patient_id, request.data)
+        # Store sensor readings if provided (non-blocking — don't make the
+        # Pi wait on a MongoDB round-trip before it can send the next frame)
+        sensor_data = {
+            "hrv": request.data.get("hrv"),
+            "accel_x": request.data.get("accel_x"),
+            "accel_y": request.data.get("accel_y"),
+            "accel_z": request.data.get("accel_z"),
+        }
+        threading.Thread(
+            target=_store_sensor_reading,
+            args=(patient_id, sensor_data),
+            daemon=True,
+        ).start()
 
         # Dispatch to AI servers asynchronously
         django_port = request.META.get("SERVER_PORT", 8000)
