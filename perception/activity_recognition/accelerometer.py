@@ -47,6 +47,7 @@ class AccelerometerReader:
         self._impact_until     = 0.0  # epoch time until recent_impact is True
         self._standalone_until = 0.0
         self._freefall_start   = None  # epoch time when free-fall phase began
+        self._magnitude        = 0.0
 
     def start(self):
         self._running = True
@@ -55,6 +56,11 @@ class AccelerometerReader:
 
     def stop(self):
         self._running = False
+
+    @property
+    def magnitude(self) -> float:
+        """Last measured acceleration magnitude in g."""
+        return self._magnitude
 
     @property
     def recent_impact(self) -> bool:
@@ -84,6 +90,7 @@ class AccelerometerReader:
             t0 = time.time()
             try:
                 mag = self._read_magnitude()
+                self._magnitude = mag
                 now = time.time()
 
                 # Standalone: very hard impact fires alert without needing free-fall phase

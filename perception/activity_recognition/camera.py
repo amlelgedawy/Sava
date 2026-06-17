@@ -876,6 +876,11 @@ def run_camera():
             cv2.putText(frame, "⚠ WANDERING DETECTED", (10, 165),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
+        # Print accelerometer magnitude every 30 frames
+        if accel and frame_count % 30 == 0:
+            print(f"[Accel] |a| = {accel.magnitude:.3f} g  "
+                  f"impact={accel.recent_impact}  standalone={accel.standalone_fall}")
+
         # Fall alert — camera + accelerometer fusion
         camera_fall  = fall_consec >= FALL_PERSIST_FRAMES
         accel_impact = accel.recent_impact   if accel else False
