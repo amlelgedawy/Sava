@@ -27,8 +27,10 @@ sys.path.insert(0, str(AR_DIR))      # for data_preprocessing (used by pose_esti
 
 from perception.activity_recognition.config import (
     CAMERA_INDEX, FRAME_WIDTH, FRAME_HEIGHT, TARGET_FPS,
-    ACCEL_ENABLED, FALL_PERSIST_FRAMES,
+    ACCEL_ENABLED,
 )
+
+FALL_PERSIST_FRAMES = 10   # consecutive FALL frames required for hard-fusion trigger
 from perception.activity_recognition.pose_estimator import PoseEstimator
 from perception.activity_recognition.accelerometer import AccelerometerReader
 
