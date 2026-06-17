@@ -31,6 +31,13 @@ from perception.activity_recognition.config import (
 )
 
 FALL_PERSIST_FRAMES = 10   # consecutive FALL frames required for hard-fusion trigger
+
+# Demo-mode thresholds — patch accelerometer module globals so the loop picks them up.
+# Production values: ACCEL_STANDALONE_G=4.0, ACCEL_IMPACT_THRESHOLD_G=2.5, ACCEL_FREEFALL_THRESHOLD_G=0.6
+import perception.activity_recognition.accelerometer as _accel_mod
+_accel_mod.ACCEL_STANDALONE_G         = 2.0   # trigger on hard shake (~2g), not just real falls
+_accel_mod.ACCEL_IMPACT_THRESHOLD_G   = 1.8   # impact after free-fall
+_accel_mod.ACCEL_FREEFALL_THRESHOLD_G = 0.7   # free-fall phase detection
 from perception.activity_recognition.pose_estimator import PoseEstimator
 from perception.activity_recognition.accelerometer import AccelerometerReader
 
