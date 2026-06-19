@@ -682,6 +682,7 @@ def run_camera():
             print("✅ Accelerometer (MPU-6050) connected.")
         except Exception as e:
             print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
+
     # emotion_det = EmotionDetector(device)   # dropped — lowest priority
     pain_det = PainDetector(PAIN_BASELINE_FRAMES)
     pain_clf = None
@@ -692,7 +693,62 @@ def run_camera():
         except Exception as e:
             print(f" Pain classifier not available: {e}")
 
-    cap      = initialize_camera()
+    cap = initialize_camera()
+
+    # Separate capture thread keeps _latest_raw at camera FPS.
+    # Separate stream thread posts to Django at 5 FPS.
+    # Both are independent of SkateFormer inference speed.
+    _PI_API_KEY      = os.environ.get("PI_API_KEY", "sava-pi-dev-key")
+    _latest_raw      = None
+    _raw_lock        = threading.Lock()
+    _cap_stop        = [False]
+
+    def _cap_loop():
+        nonlocal _latest_raw
+        while not _cap_stop[0]:
+            ret, f = cap.read()
+            if not ret:
+                time.sleep(0.5)
+                continue
+            f = cv2.resize(f, (FRAME_WIDTH, FRAME_HEIGHT))
+            with _raw_lock:
+                _latest_raw = f
+
+    def _stream_loop():
+        sess = requests.Session()
+        while not _cap_stop[0]:
+            time.sleep(0.2)   # 5 FPS
+            with _raw_lock:
+                if _latest_raw is None:
+                    continue
+                f = _latest_raw.copy()
+            pid = identifier.patient_id or ""
+            ax, ay, az = accel.xyz if accel else (0.0, 0.0, 0.0)
+            try:
+                small = cv2.resize(f, (320, 240))
+                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                r = sess.post(
+                    f"{DJANGO_API_URL}/stream/push-frame",
+                    headers={"X-Api-Key": _PI_API_KEY},
+                    files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
+                    data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az},
+                    timeout=2,
+                )
+                if r.status_code not in (200, 202):
+                    print(f"[stream] {r.status_code}: {r.text[:80]}")
+            except Exception as e:
+                print(f"[stream] error: {e}")
+        sess.close()
+
+    threading.Thread(target=_cap_loop, daemon=True).start()
+    threading.Thread(target=_stream_loop, daemon=True).start()
+
+    while True:
+        with _raw_lock:
+            if _latest_raw is not None:
+                break
+        time.sleep(0.05)
+
     recorder = initialize_recorder()
 
     print(" Camera started successfully.")
@@ -710,18 +766,14 @@ def run_camera():
     SMOOTH_WINDOW      = 15
     CONFIDENCE_THRESH  = 0.75   # raised from 0.60 to cut wrong guesses
     CLASS_THRESHOLDS   = {"FALL": 0.75}
-    FALL_PERSIST_FRAMES  = 10
+    FALL_PERSIST_FRAMES  = 5
     DRINK_PERSIST_FRAMES = 8     # DRINK must hold N frames before showing
     DRINK_EAT_MARGIN     = 0.15  # if DRINK barely beats EAT, prefer EAT
     probs_buffer         = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print(" Failed to grab frame.")
-            break
-
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        with _raw_lock:
+            frame = _latest_raw.copy()
         raw_frame = frame.copy()  # Keep a clean copy for face recognition
 
         # 1️⃣ Person Detection (YOLO) — boxes for face recognition, bbox for pain crop
@@ -784,8 +836,6 @@ def run_camera():
         #    Read identifier.patient_id directly — the local variable may be stale
         #    if the background face-recognition thread updated it mid-frame.
         current_pid = identifier.patient_id
-        if last_pred == "FALL":
-            _send_activity_event(current_pid, "FALL", last_conf)
 
         # Pain alert persistence counter (same pattern as fall detection)
         if last_pain_prob is not None and last_pain_prob >= PAIN_ALERT_THRESH:
@@ -880,9 +930,19 @@ def run_camera():
         camera_fall  = fall_consec >= FALL_PERSIST_FRAMES
         accel_impact = accel.recent_impact   if accel else False
         accel_alone  = accel.standalone_fall if accel else False
-        # Primary:     camera sees FALL for N frames AND accelerometer confirms impact
-        # Safety net:  accelerometer alone detects very hard impact (covers out-of-view falls)
-        if (camera_fall and accel_impact) or accel_alone:
+
+        # With accelerometer: require hardware confirmation to eliminate DRINK false positives.
+        # Free-fall+impact signature can't be produced by a drinking motion.
+        # Without accelerometer: fall back to camera-only persist gate.
+        if accel:
+            fall_detected = (camera_fall and accel_impact) or accel_alone
+            fall_conf     = last_conf if camera_fall else 1.0
+        else:
+            fall_detected = camera_fall
+            fall_conf     = last_conf
+
+        if fall_detected:
+            _send_activity_event(current_pid, "FALL", fall_conf)
             cv2.putText(frame, "FALL DETECTED", (10, 200),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
@@ -910,6 +970,7 @@ def run_camera():
         if not HEADLESS_MODE and cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    _cap_stop[0] = True
     cap.release()
     pose_est.close()
     if accel:

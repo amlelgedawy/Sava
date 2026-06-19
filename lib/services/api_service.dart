@@ -7,7 +7,7 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://172.20.10.3:8000/api";
+  static const String _baseUrl = "http://172.20.10.5:8000/api";
   //static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server

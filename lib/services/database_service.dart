@@ -8,7 +8,7 @@ import '../app_state.dart';
 import 'api_service.dart';
 
 class DatabaseService {
-  static const String _baseUrl = "http://172.20.10.3:8000/api";
+  static const String _baseUrl = "http://172.20.10.5:8000/api";
   //static const String _baseUrl = "http://10.0.2.2:8000/api"; // Android emulator alias
 
   static Timer? _alertPollingTimer;
