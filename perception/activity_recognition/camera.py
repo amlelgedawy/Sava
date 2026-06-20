@@ -715,6 +715,8 @@ def run_camera():
     _latest_raw      = None
     _raw_lock        = threading.Lock()
     _cap_stop        = [False]
+    _ai_state        = [{"person_boxes": [], "activity": None, "confidence": 0.0}]
+    _ai_state_lock   = threading.Lock()
 
     def _cap_loop():
         nonlocal _latest_raw
@@ -751,12 +753,14 @@ def run_camera():
                     }
                     for d in raw_dets
                 ])
+                with _ai_state_lock:
+                    ai_payload = _json.dumps(_ai_state[0])
                 r = sess.post(
                     f"{DJANGO_API_URL}/stream/push-frame",
                     headers={"X-Api-Key": _PI_API_KEY},
                     files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
                     data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az,
-                          "detections": dets_payload},
+                          "detections": dets_payload, "ai_state": ai_payload},
                     timeout=8,
                 )
                 if r.status_code not in (200, 202):
@@ -850,6 +854,23 @@ def run_camera():
             fall_consec += 1
         else:
             fall_consec = 0
+
+        # Share person boxes + activity with _stream_loop for Flutter AR overlay
+        _h, _w = frame.shape[:2]
+        _person_boxes = []
+        if yolo_boxes is not None:
+            for _box in yolo_boxes:
+                _x1, _y1, _x2, _y2 = _box.xyxy[0].tolist()
+                _person_boxes.append({
+                    "x1": round(_x1 / _w, 4), "y1": round(_y1 / _h, 4),
+                    "x2": round(_x2 / _w, 4), "y2": round(_y2 / _h, 4),
+                })
+        with _ai_state_lock:
+            _ai_state[0] = {
+                "person_boxes": _person_boxes,
+                "activity": last_pred,
+                "confidence": round(last_conf, 3),
+            }
 
         # 5️ Dangerous Object Detection (runs every OBJECT_DETECTION_INTERVAL seconds)
         obj_detections = obj_detector.detect(raw_frame)

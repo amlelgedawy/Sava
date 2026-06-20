@@ -747,9 +747,10 @@ class ApiService {
       if (activity != null) {
         _handleActivityResponse(json.encode(activity));
       } else {
-        AppState.activityResult.value = ActivityResult.empty;
-        // Fall back to Pi-side dangerous object detections for AR overlay
+        // Pi-side detections: dangerous objects + person boxes + activity
         final piDets = data['PI_DETECTIONS'] as Map<String, dynamic>?;
+
+        // Dangerous object boxes
         final rawPi = piDets?['dangerous_objects'] as List<dynamic>? ?? [];
         AppState.detectedObjects.value = rawPi.map((raw) {
           final m = raw as Map<String, dynamic>;
@@ -763,6 +764,31 @@ class ApiService {
             right: (box?['x2'] as num? ?? 1.0).toDouble(),
           );
         }).toList();
+
+        // Person boxes + activity from Pi's SkateFormer
+        final rawPersonBoxes = piDets?['person_boxes'] as List<dynamic>? ?? [];
+        final personBoxes = rawPersonBoxes.map((raw) {
+          final m = raw as Map<String, dynamic>;
+          return DetectedObject(
+            label: 'person',
+            confidence: 1.0,
+            top: (m['y1'] as num? ?? 0.0).toDouble(),
+            left: (m['x1'] as num? ?? 0.0).toDouble(),
+            bottom: (m['y2'] as num? ?? 1.0).toDouble(),
+            right: (m['x2'] as num? ?? 1.0).toDouble(),
+          );
+        }).toList();
+        final piActivity = piDets?['activity'] as String?;
+        final piConf = (piDets?['confidence'] as num? ?? 0.0).toDouble();
+        AppState.activityResult.value = ActivityResult(
+          activity: piActivity,
+          confidence: piConf,
+          fallAlert: piActivity == 'FALL',
+          wandering: false,
+          bufferProgress: 64,
+          bufferTarget: 64,
+          personBoxes: personBoxes,
+        );
       }
 
       final face = data['FACE_SERVER'] as Map<String, dynamic>?;
