@@ -30,7 +30,7 @@ class _VisionPageState extends State<VisionPage> {
   Timer? _snapshotTimer;
   int _snapshotTick = 0;
   static const Duration _detectionInterval = Duration(seconds: 1);
-  static const Duration _snapshotInterval = Duration(milliseconds: 200);
+  static const Duration _snapshotInterval = Duration(milliseconds: 500);
 
   bool get _streamReady =>
       AppState.patientId.value != null && AppState.patientId.value!.isNotEmpty;
