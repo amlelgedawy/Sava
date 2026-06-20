@@ -736,8 +736,8 @@ def run_camera():
             pid = identifier.patient_id or ""
             ax, ay, az = accel.xyz if accel else (0.0, 0.0, 0.0)
             try:
-                small = cv2.resize(f, (320, 240))
-                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                small = cv2.resize(f, (640, 480))
+                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
                 # Include latest dangerous object bounding boxes so Flutter can overlay them
                 raw_dets = obj_detector.last_detections if obj_loaded else []
                 dets_payload = _json.dumps([
