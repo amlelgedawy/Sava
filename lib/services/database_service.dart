@@ -202,6 +202,7 @@ class DatabaseService {
         AlertType newType;
         switch (type) {
           case 'FALL':
+          case 'FALL_DETECTED':
             newType = AlertType.fall;
             break;
           case 'OBJECT':
