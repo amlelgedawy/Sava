@@ -15,17 +15,30 @@ import math
 import threading
 import time
 
-from .config import (
-    ACCEL_FREEFALL_MIN_MS,
-    ACCEL_FREEFALL_THRESHOLD_G,
-    ACCEL_I2C_ADDR,
-    ACCEL_I2C_BUS,
-    ACCEL_IMPACT_FLAG_SEC,
-    ACCEL_IMPACT_THRESHOLD_G,
-    ACCEL_IMPACT_WINDOW_MS,
-    ACCEL_SAMPLE_RATE_HZ,
-    ACCEL_STANDALONE_G,
-)
+try:
+    from .config import (
+        ACCEL_FREEFALL_MIN_MS,
+        ACCEL_FREEFALL_THRESHOLD_G,
+        ACCEL_I2C_ADDR,
+        ACCEL_I2C_BUS,
+        ACCEL_IMPACT_FLAG_SEC,
+        ACCEL_IMPACT_THRESHOLD_G,
+        ACCEL_IMPACT_WINDOW_MS,
+        ACCEL_SAMPLE_RATE_HZ,
+        ACCEL_STANDALONE_G,
+    )
+except ImportError:
+    from config import (
+        ACCEL_FREEFALL_MIN_MS,
+        ACCEL_FREEFALL_THRESHOLD_G,
+        ACCEL_I2C_ADDR,
+        ACCEL_I2C_BUS,
+        ACCEL_IMPACT_FLAG_SEC,
+        ACCEL_IMPACT_THRESHOLD_G,
+        ACCEL_IMPACT_WINDOW_MS,
+        ACCEL_SAMPLE_RATE_HZ,
+        ACCEL_STANDALONE_G,
+    )
 
 _PWR_MGMT_1   = 0x6B
 _ACCEL_XOUT_H = 0x3B
@@ -47,6 +60,7 @@ class AccelerometerReader:
         self._impact_until     = 0.0  # epoch time until recent_impact is True
         self._standalone_until = 0.0
         self._freefall_start   = None  # epoch time when free-fall phase began
+        self._last_xyz         = (0.0, 0.0, 0.0)
 
     def start(self):
         self._running = True
@@ -66,6 +80,12 @@ class AccelerometerReader:
         """True for ACCEL_IMPACT_FLAG_SEC seconds after a very hard impact (>=ACCEL_STANDALONE_G)."""
         return time.time() < self._standalone_until
 
+    @property
+    def xyz(self) -> tuple:
+        """Latest (ax, ay, az) reading in g."""
+        with self._lock:
+            return self._last_xyz
+
     def _read_magnitude(self) -> float:
         data = self._bus.read_i2c_block_data(self._addr, _ACCEL_XOUT_H, 6)
 
@@ -76,6 +96,8 @@ class AccelerometerReader:
         ax = to_signed(data[0], data[1]) / _ACCEL_SCALE
         ay = to_signed(data[2], data[3]) / _ACCEL_SCALE
         az = to_signed(data[4], data[5]) / _ACCEL_SCALE
+        with self._lock:
+            self._last_xyz = (ax, ay, az)
         return math.sqrt(ax * ax + ay * ay + az * az)
 
     def _loop(self):

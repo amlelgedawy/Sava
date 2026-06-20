@@ -12,9 +12,9 @@ except ImportError:
 
 
 # Configuration
-CAMERA_URL = os.environ.get("CAMERA_URL", "http://172.20.10.4:8080/video")
-DJANGO_URL = os.environ.get("DJANGO_URL", "http://172.20.10.3:8000")
-PI_API_KEY = "bkjjbvjxs566t7sycgvuc6s78isb8@@hbbvgchcg"
+CAMERA_URL = os.environ.get("CAMERA_URL", "http://192.168.1.4:8080/video")
+DJANGO_URL = os.environ.get("DJANGO_URL", "http://192.168.1.3:8000")
+PI_API_KEY = os.environ.get("PI_API_KEY", "sava-pi-dev-key")
 PATIENT_ID = "6a0e4fc16b309057efb4acde"
 TARGET_FPS = 15
 JPEG_QUALITY = 50
@@ -99,13 +99,15 @@ try:
         a = get_accel()
 
         try:
-            session.post(
+            r = session.post(
                 f"{DJANGO_URL}/api/stream/push-frame",
                 headers={"X-Api-Key": PI_API_KEY},
                 files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
                 data={"patient_id": PATIENT_ID, "accel_x": a["x"], "accel_y": a["y"], "accel_z": a["z"]},
                 timeout=3,
             )
+            if r.status_code not in (200, 202):
+                print(f"Push rejected: {r.status_code} {r.text[:120]}")
         except requests.exceptions.RequestException as e:
             print(f"Push failed: {e}")
 

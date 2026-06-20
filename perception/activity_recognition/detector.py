@@ -6,7 +6,7 @@ model = YOLO("yolov8n.pt")
 
 
 def detect_person(frame):
-    results = model(frame)
+    results = model(frame, conf=0.55, classes=[0])
 
     for result in results:
         boxes = result.boxes
@@ -15,7 +15,6 @@ def detect_person(frame):
             cls = int(box.cls[0])
             confidence = float(box.conf[0])
 
-            # COCO class 0 = person
             if cls == 0:
                 x1, y1, x2, y2 = box.xyxy[0]
                 x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)

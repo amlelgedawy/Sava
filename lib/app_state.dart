@@ -130,6 +130,15 @@ class AppState {
   // ---- ALERT HISTORY ----
   static final ValueNotifier<List<AlertEntry>> alertHistory = ValueNotifier([]);
 
+  // ---- REFRESH SIGNALS ----
+  static final ValueNotifier<int> patientListRefresh = ValueNotifier(0);
+
+  // ---- ACTIVITY BUFFER ----
+  // True once the 64-frame pose buffer has been filled for the first time
+  // after login. Prevents the "Collecting frames" spinner from restarting
+  // every time the user navigates back to the camera view.
+  static bool activityBufferReady = false;
+
   // ---- USER SESSION ----
   static final ValueNotifier<String?> userId = ValueNotifier(null);
   static final ValueNotifier<String?> caregiverId = ValueNotifier(null);

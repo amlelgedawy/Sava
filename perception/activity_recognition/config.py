@@ -42,8 +42,8 @@ ACCEL_I2C_BUS              = 1       # Raspberry Pi I2C bus
 ACCEL_I2C_ADDR             = 0x68   # MPU-6050 default I2C address
 ACCEL_SAMPLE_RATE_HZ       = 100    # polling rate in background thread
 ACCEL_FREEFALL_THRESHOLD_G = 0.6    # |a| below this = free-fall phase
-ACCEL_IMPACT_THRESHOLD_G   = 2.5    # |a| above this after free-fall = impact confirmed
-ACCEL_STANDALONE_G         = 4.0    # |a| above this fires alert without camera
+ACCEL_IMPACT_THRESHOLD_G   = 1.1    # |a| above this after free-fall = impact confirmed
+ACCEL_STANDALONE_G         = 1.1    # |a| above this fires alert without camera
 ACCEL_FREEFALL_MIN_MS      = 40     # free-fall must last at least this long (ms)
 ACCEL_IMPACT_WINDOW_MS     = 500    # impact must follow free-fall within this window (ms)
-ACCEL_IMPACT_FLAG_SEC      = 2.0    # how long impact flags stay True after event
+ACCEL_IMPACT_FLAG_SEC      = 8.0    # how long impact flags stay True after event

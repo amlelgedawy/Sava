@@ -185,7 +185,7 @@ class WanderingDetector:
 # Face Recognition + Person Tracking integration
 # ---------------------------------------------------------------------------
 
-DJANGO_API_URL = os.environ.get("DJANGO_API_URL", "http://localhost:8000/api")
+DJANGO_API_URL = os.environ.get("DJANGO_API_URL", "http://192.168.1.3:8000/api")
 AI_FACE_SERVER_URL = os.environ.get("AI_FACE_SERVER_URL", "http://localhost:5000")
 
 # How often to run face recognition (seconds) — not every frame
@@ -198,7 +198,10 @@ _ALERT_COOLDOWNS = {
     "WANDERING": 120,
     "DANGEROUS_OBJECT": 60,
 }
+_NORMAL_ACTIVITY_COOLDOWN = 300   # 5-min repeat window for same activity
 _last_alert_time = {}
+_last_sent_activity: list = [None]   # tracks last logged activity for change detection
+_NORMAL_ACTIVITIES = {"EAT", "DRINK", "WALK", "SIT", "STAND", "SLEEP", "USE_PHONE"}
 
 # Critical events that should be queued when patient_id is not yet available
 _CRITICAL_ACTIVITIES = {"FALL", "PAIN"}
@@ -230,9 +233,10 @@ class PatientIdentifier:
     EMBEDDING_SIMILARITY_THRESHOLD = 0.6
 
     def __init__(self):
-        self.patient_id = None
+        _env_pid = os.environ.get("PATIENT_ID", "").strip()
+        self.patient_id = _env_pid if _env_pid else None
         self.patient_name = None
-        self.state = self.STATE_IDENTIFYING
+        self.state = self.STATE_TRACKING if _env_pid else self.STATE_IDENTIFYING
         self._last_check = 0
         self._busy = False
         self._name_to_id_cache = {}
@@ -409,6 +413,12 @@ class PatientIdentifier:
 
     def _transition_to_identifying(self, reason):
         """Clear identity and switch back to face recognition phase."""
+        _env_pid = os.environ.get("PATIENT_ID", "").strip()
+        if _env_pid:
+            # Patient is pinned via env var — don't clear the ID, just reset tracking
+            self._known_embedding = None
+            self._tracking_lost_count = 0
+            return
         if self.patient_id is not None:
             print(f" {reason} -- switching to face recognition mode")
         self.patient_id = None
@@ -468,7 +478,7 @@ def _send_activity_event(patient_id, activity, confidence, is_wandering=False, w
 
     now = time.time()
     key = "WANDERING" if is_wandering else activity
-    cooldown = _ALERT_COOLDOWNS.get(key, 10)
+    cooldown = _ALERT_COOLDOWNS.get(key, _NORMAL_ACTIVITY_COOLDOWN)
     if now - _last_alert_time.get(key, 0) < cooldown:
         return  # Still in cooldown
     _last_alert_time[key] = now
@@ -676,14 +686,18 @@ def run_camera():
     accel = None
     if ACCEL_ENABLED:
         try:
-            from .accelerometer import AccelerometerReader
+            try:
+                from .accelerometer import AccelerometerReader
+            except ImportError:
+                from accelerometer import AccelerometerReader
             accel = AccelerometerReader()
             accel.start()
             print("✅ Accelerometer (MPU-6050) connected.")
         except Exception as e:
             print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
+
     # emotion_det = EmotionDetector(device)   # dropped — lowest priority
-    pain_det = PainDetector(PAIN_BASELINE_FRAMES)
+    pain_det = PainDetector(PAIN_BASELINE_FRAMES) if PainDetector is not None else None
     pain_clf = None
     if PainClassifier is not None:
         try:
@@ -692,7 +706,75 @@ def run_camera():
         except Exception as e:
             print(f" Pain classifier not available: {e}")
 
-    cap      = initialize_camera()
+    cap = initialize_camera()
+
+    # Separate capture thread keeps _latest_raw at camera FPS.
+    # Separate stream thread posts to Django at 5 FPS.
+    # Both are independent of SkateFormer inference speed.
+    _PI_API_KEY      = os.environ.get("PI_API_KEY", "sava-pi-dev-key")
+    _latest_raw      = None
+    _raw_lock        = threading.Lock()
+    _cap_stop        = [False]
+
+    def _cap_loop():
+        nonlocal _latest_raw
+        while not _cap_stop[0]:
+            ret, f = cap.read()
+            if not ret:
+                time.sleep(0.5)
+                continue
+            f = cv2.resize(f, (FRAME_WIDTH, FRAME_HEIGHT))
+            with _raw_lock:
+                _latest_raw = f
+
+    def _stream_loop():
+        import json as _json
+        sess = requests.Session()
+        while not _cap_stop[0]:
+            time.sleep(0.2)   # 5 FPS
+            with _raw_lock:
+                if _latest_raw is None:
+                    continue
+                f = _latest_raw.copy()
+            pid = identifier.patient_id or ""
+            ax, ay, az = accel.xyz if accel else (0.0, 0.0, 0.0)
+            try:
+                small = cv2.resize(f, (640, 480))
+                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                # Include latest dangerous object bounding boxes so Flutter can overlay them
+                raw_dets = obj_detector.last_detections if obj_loaded else []
+                dets_payload = _json.dumps([
+                    {
+                        "label": d["label"],
+                        "confidence": d["confidence"],
+                        "danger_level": d.get("danger_level", "LOW"),
+                        "box": d["box_norm"],
+                    }
+                    for d in raw_dets
+                ])
+                r = sess.post(
+                    f"{DJANGO_API_URL}/stream/push-frame",
+                    headers={"X-Api-Key": _PI_API_KEY},
+                    files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
+                    data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az,
+                          "detections": dets_payload},
+                    timeout=2,
+                )
+                if r.status_code not in (200, 202):
+                    print(f"[stream] {r.status_code}: {r.text[:80]}")
+            except Exception as e:
+                print(f"[stream] error: {e}")
+        sess.close()
+
+    threading.Thread(target=_cap_loop, daemon=True).start()
+    threading.Thread(target=_stream_loop, daemon=True).start()
+
+    while True:
+        with _raw_lock:
+            if _latest_raw is not None:
+                break
+        time.sleep(0.05)
+
     recorder = initialize_recorder()
 
     print(" Camera started successfully.")
@@ -708,20 +790,16 @@ def run_camera():
     pain_consec    = 0
     frame_count    = 0
     SMOOTH_WINDOW      = 15
-    CONFIDENCE_THRESH  = 0.75   # raised from 0.60 to cut wrong guesses
+    CONFIDENCE_THRESH  = 0.75
     CLASS_THRESHOLDS   = {"FALL": 0.75}
-    FALL_PERSIST_FRAMES  = 10
-    DRINK_PERSIST_FRAMES = 8     # DRINK must hold N frames before showing
-    DRINK_EAT_MARGIN     = 0.15  # if DRINK barely beats EAT, prefer EAT
+    FALL_PERSIST_FRAMES  = 5
+    DRINK_PERSIST_FRAMES = 12    # DRINK must hold N frames before confirming
+    DRINK_EAT_MARGIN     = 0.45  # DRINK needs 45% lead over EAT to win
     probs_buffer         = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print(" Failed to grab frame.")
-            break
-
-        frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+        with _raw_lock:
+            frame = _latest_raw.copy()
         raw_frame = frame.copy()  # Keep a clean copy for face recognition
 
         # 1️⃣ Person Detection (YOLO) — boxes for face recognition, bbox for pain crop
@@ -784,8 +862,6 @@ def run_camera():
         #    Read identifier.patient_id directly — the local variable may be stale
         #    if the background face-recognition thread updated it mid-frame.
         current_pid = identifier.patient_id
-        if last_pred == "FALL":
-            _send_activity_event(current_pid, "FALL", last_conf)
 
         # Pain alert persistence counter (same pattern as fall detection)
         if last_pain_prob is not None and last_pain_prob >= PAIN_ALERT_THRESH:
@@ -801,6 +877,13 @@ def run_camera():
         if obj_detections:
             _send_object_detection_event(current_pid, obj_detections)
 
+        # Normal activity logging: immediate on change, 5-min repeat for same activity
+        if last_pred and last_pred in _NORMAL_ACTIVITIES:
+            if last_pred != _last_sent_activity[0]:
+                _last_alert_time.pop(last_pred, None)
+                _last_sent_activity[0] = last_pred
+            _send_activity_event(current_pid, last_pred, last_conf)
+
         # FPS control
         current_time = time.time()
         elapsed      = current_time - prev_time
@@ -813,11 +896,11 @@ def run_camera():
         #    Falls back to EfficientNet-B0 when pain_efficientnet_b0.pt is available.
         frame_count += 1
         if frame_count % PAIN_FRAME_INTERVAL == 0:
-            if pain_clf._model is not None:
+            if pain_clf is not None and pain_clf._model is not None:
                 face_crop = _face_crop_from_bbox(frame, person_bbox)
                 if face_crop is not None:
                     last_pain_prob = pain_clf.predict(face_crop)
-            else:
+            elif pain_det is not None:
                 last_pain_prob = pain_det.predict(frame)
 
         # ----------------------------------------------------------------
@@ -859,7 +942,7 @@ def run_camera():
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, act_color, 2)
 
         # Pain overlay
-        if pain_det.calibrating:
+        if pain_det is not None and pain_det.calibrating:
             pain_text  = f"Pain: calibrating... ({pain_det.calibration_count}/{PAIN_BASELINE_FRAMES})"
             pain_color = (100, 100, 100)
         elif last_pain_prob is not None:
@@ -880,9 +963,19 @@ def run_camera():
         camera_fall  = fall_consec >= FALL_PERSIST_FRAMES
         accel_impact = accel.recent_impact   if accel else False
         accel_alone  = accel.standalone_fall if accel else False
-        # Primary:     camera sees FALL for N frames AND accelerometer confirms impact
-        # Safety net:  accelerometer alone detects very hard impact (covers out-of-view falls)
-        if (camera_fall and accel_impact) or accel_alone:
+
+        # With accelerometer: require hardware confirmation to eliminate DRINK false positives.
+        # Free-fall+impact signature can't be produced by a drinking motion.
+        # Without accelerometer: fall back to camera-only persist gate.
+        if accel:
+            fall_detected = (camera_fall and accel_impact) or accel_alone
+            fall_conf     = last_conf if camera_fall else 1.0
+        else:
+            fall_detected = camera_fall
+            fall_conf     = last_conf
+
+        if fall_detected:
+            _send_activity_event(current_pid, "FALL", fall_conf)
             cv2.putText(frame, "FALL DETECTED", (10, 200),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 255), 3)
 
@@ -910,13 +1003,19 @@ def run_camera():
         if not HEADLESS_MODE and cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+    _cap_stop[0] = True
     cap.release()
     pose_est.close()
     if accel:
         accel.stop()
-    pain_det.close()
+    if pain_det is not None:
+        pain_det.close()
     if recorder:
         recorder.release()
     if not HEADLESS_MODE:
         cv2.destroyAllWindows()
     print(" Camera stopped cleanly.")
+
+
+if __name__ == '__main__':
+    run_camera()

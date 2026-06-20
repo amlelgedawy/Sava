@@ -54,6 +54,7 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
               AppState.currentUser.value = null;
               AppState.userRole.value = null;
               AppState.caregiverName.value = 'User';
+              AppState.activityBufferReady = false;
               AppState.isLoggedIn.value = false;
               AppState.currentNavIndex.value = 0;
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -135,17 +136,6 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                         ],
                       ),
                       Row(children: [
-                        IconButton(
-                          onPressed: () => ApiService.simulateHeartRate(
-                              bpm == 72 ? 145 : 72),
-                          icon: const Icon(Icons.speed_rounded,
-                              color: SovaColors.sage),
-                        ),
-                        IconButton(
-                          onPressed: () => ApiService.processAiDetection(alert),
-                          icon: const Icon(Icons.science_rounded,
-                              color: SovaColors.sage),
-                        ),
                         // ── Alerts Bell ─────────────────────────────────
                         const AlertBell(),
                       ]),
@@ -318,99 +308,91 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
 
                     const SizedBox(height: 16),
 
-                    // ── Next Medicine + Zone Status ────────────────────────
-                    Row(children: [
-                      // Next Medicine
-                      Expanded(
-                        child: ValueListenableBuilder<List<Medication>>(
-                          valueListenable: AppState.allMedications,
-                          builder: (_, meds, __) {
-                            Medication? next;
-                            for (final m in meds) {
-                              if (!m.isTaken) {
-                                next = m;
-                                break;
+                    // ── Medicine + Activity side by side ──────────────────
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ValueListenableBuilder<List<Medication>>(
+                            valueListenable: AppState.allMedications,
+                            builder: (_, meds, __) {
+                              Medication? next;
+                              for (final m in meds) {
+                                if (!m.isTaken) { next = m; break; }
                               }
-                            }
-                            return InteractiveBentoCard(
-                              onTap: () => AppState.currentNavIndex.value = 4,
-                              color: const Color(0xFFE83E8C),
-                              height: 130,
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Icon(Icons.medication_liquid_outlined,
-                                        color: Colors.white, size: 24),
-                                    const Spacer(),
-                                    const Text('NEXT MEDICINE',
-                                        style: TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.bold,
-                                            letterSpacing: 1)),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      next?.name ?? '✓ All taken',
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    if (next != null)
-                                      Text(next.time,
-                                          style: const TextStyle(
+                              return InteractiveBentoCard(
+                                onTap: () => AppState.currentNavIndex.value = 4,
+                                color: const Color(0xFFE83E8C),
+                                height: 130,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(Icons.medication_liquid_outlined,
+                                          color: Colors.white, size: 24),
+                                      const Spacer(),
+                                      const Text('NEXT MEDICINE',
+                                          style: TextStyle(
                                               color: Colors.white70,
-                                              fontSize: 12)),
-                                  ],
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        next?.name ?? '✓ All taken',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (next != null)
+                                        Text(next.time,
+                                            style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ).animate().fadeIn(delay: 300.ms),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      // Zone Status
-                      Expanded(
-                        child: ValueListenableBuilder<String>(
-                          valueListenable: AppState.patientName,
-                          builder: (_, name, __) => InteractiveBentoCard(
-                            onTap: () {},
-                            color: SovaColors.sage,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InteractiveBentoCard(
+                            onTap: () => AppState.currentNavIndex.value = 3,
+                            color: const Color(0xFF8DA399),
                             height: 130,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
+                            child: const Padding(
+                              padding: EdgeInsets.all(16),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.location_on_rounded,
+                                  Icon(Icons.timeline_rounded,
                                       color: Colors.white, size: 24),
-                                  const Spacer(),
-                                  Text(name,
-                                      style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis),
-                                  const Text('is in',
+                                  Spacer(),
+                                  Text('ACTIVITY',
                                       style: TextStyle(
-                                          color: Colors.white70, fontSize: 11)),
-                                  const Text('Kitchen',
+                                          color: Colors.white70,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1)),
+                                  SizedBox(height: 4),
+                                  Text('Timeline',
                                       style: TextStyle(
                                           color: Colors.white,
-                                          fontSize: 16,
+                                          fontSize: 13,
                                           fontWeight: FontWeight.bold)),
                                 ],
                               ),
                             ),
-                          ),
+                          ).animate().fadeIn(delay: 300.ms),
                         ),
-                      ),
-                    ]).animate().fadeIn(delay: 300.ms),
+                      ],
+                    ),
 
                     const SizedBox(height: 16),
 
@@ -432,32 +414,6 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
                                 color: Colors.white, size: 28),
                             SizedBox(height: 8),
                             Text('Camera View',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // ── Activity Timeline Card ─────────────────────────────
-                    InteractiveBentoCard(
-                      onTap: () => AppState.currentNavIndex.value = 3,
-                      color: const Color(0xFF8DA399),
-                      height: 120,
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.timeline_rounded,
-                                color: Colors.white, size: 28),
-                            SizedBox(height: 8),
-                            Text('Activity Timeline',
                                 style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 13,

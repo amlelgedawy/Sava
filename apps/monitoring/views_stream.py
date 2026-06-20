@@ -65,6 +65,14 @@ class PushFrameView(APIView):
             daemon=True,
         ).start()
 
+        # Store Pi-side dangerous object detections for Flutter AR overlay
+        det_json = request.data.get("detections", "[]")
+        try:
+            dets = json.loads(det_json)
+            StreamManager.set_detection(patient_id, "PI_DETECTIONS", {"dangerous_objects": dets})
+        except Exception:
+            pass
+
         # Dispatch to AI servers asynchronously
         django_port = request.META.get("SERVER_PORT", 8000)
         dispatch(patient_id, jpeg_bytes, django_port=int(django_port))
