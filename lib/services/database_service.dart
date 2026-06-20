@@ -8,10 +8,18 @@ import '../app_state.dart';
 import 'api_service.dart';
 
 class DatabaseService {
-  static const String _baseUrl = "http://172.20.10.5:8000/api";
+  static const String _baseUrl = "http://192.168.1.3:8000/api";
   //static const String _baseUrl = "http://10.0.2.2:8000/api"; // Android emulator alias
 
   static Timer? _alertPollingTimer;
+  static Timer? _heartRateTimer;
+  static int _heartRateIndex = 0;
+  static const List<int> _heartRateSequence = [
+    68, 71, 74, 72, 76, 73, 70, 75, 72, 69, 74, 77, 73, 71, 75
+  ];
+
+  // Alert spam prevention — track which backend IDs we've already notified
+  static final Set<String> _seenAlertIds = {};
 
   // --- KEEPING ALL LOCAL DATA FOR YOUR OTHER PAGES ---
   static final List<Medication> _meds = [];
@@ -126,15 +134,29 @@ class DatabaseService {
       const Duration(seconds: 5),
       (_) => _fetchNewAlerts(),
     );
+    _startHeartRateSimulation();
   }
 
-  static void _startAlertPolling() => startAlertPollingForUser(
-        AppState.caregiverId.value ?? '',
-      );
+  static void _startAlertPolling() {
+    startAlertPollingForUser(AppState.caregiverId.value ?? '');
+  }
 
   static void stopAlertPolling() {
     _alertPollingTimer?.cancel();
     _alertPollingTimer = null;
+    _heartRateTimer?.cancel();
+    _heartRateTimer = null;
+    _seenAlertIds.clear();
+  }
+
+  static void _startHeartRateSimulation() {
+    _heartRateTimer?.cancel();
+    _heartRateIndex = 0;
+    AppState.heartRate.value = _heartRateSequence[0];
+    _heartRateTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _heartRateIndex = (_heartRateIndex + 1) % _heartRateSequence.length;
+      AppState.heartRate.value = _heartRateSequence[_heartRateIndex];
+    });
   }
 
   static Future<void> _fetchNewAlerts() async {
@@ -150,7 +172,24 @@ class DatabaseService {
           AppState.alertStatus.value = AlertType.none;
           return;
         }
-        final String type = alerts[0]['alert_type'].toString().toUpperCase();
+
+        // Find the latest alert we haven't seen yet
+        Map<String, dynamic>? unseenAlert;
+        for (final a in alerts) {
+          final id = (a['id'] ?? a['_id'] ?? '').toString();
+          if (id.isEmpty || !_seenAlertIds.contains(id)) {
+            unseenAlert = a as Map<String, dynamic>;
+            if (id.isNotEmpty) {
+              _seenAlertIds.add(id);
+              ApiService.markAlertSeen(id);
+            }
+            break;
+          }
+        }
+
+        // Derive current status from the most recent alert regardless of seen state
+        final String type =
+            (alerts[0]['alert_type'] as String? ?? '').toUpperCase();
         AlertType newType;
         switch (type) {
           case 'FALL':
@@ -172,9 +211,9 @@ class DatabaseService {
           default:
             newType = AlertType.none;
         }
-        // Log to alert history on transition so AlertsPage stays in sync
-        // with this poller, not just the real-time vision-page path.
-        if (newType != AlertType.none && AppState.alertStatus.value != newType) {
+
+        // Only push to alert history for newly seen alerts
+        if (unseenAlert != null && newType != AlertType.none) {
           AppState.logAlert(newType);
         }
         AppState.alertStatus.value = newType;

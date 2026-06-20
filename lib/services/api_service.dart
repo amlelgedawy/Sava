@@ -7,7 +7,7 @@ import '../app_state.dart';
 import 'database_service.dart';
 
 class ApiService {
-  static const String _baseUrl = "http://172.20.10.5:8000/api";
+  static const String _baseUrl = "http://192.168.1.3:8000/api";
   //static const String _baseUrl = "https://sava-production.up.railway.app/api";
 
   // Object detection server
@@ -34,7 +34,12 @@ class ApiService {
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'email': email, 'password': password}),
     );
-    final data = json.decode(resp.body) as Map<String, dynamic>;
+    Map<String, dynamic> data;
+    try {
+      data = json.decode(resp.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw 'Server error (${resp.statusCode}). Check that the server is running and reachable.';
+    }
     if (resp.statusCode == 200) return data;
     throw data['detail'] ?? 'Login failed (${resp.statusCode})';
   }
@@ -214,6 +219,17 @@ class ApiService {
     if (resp.statusCode == 200) return;
     throw (json.decode(resp.body) as Map)['detail'] ??
         'Failed to decline contract';
+  }
+
+  /// PATCH /api/alerts/<alert_id>  body: {"status": "SEEN"}
+  static Future<void> markAlertSeen(String alertId) async {
+    try {
+      await http.patch(
+        Uri.parse('$_baseUrl/alerts/$alertId'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'status': 'SEEN'}),
+      );
+    } catch (_) {}
   }
 
   /// POST /api/contracts/<contract_id>/end  body: {user_id}
@@ -669,6 +685,10 @@ class ApiService {
       if (danger == 'HIGH' || danger == 'MEDIUM') hasHighDanger = true;
     }
 
+    if (bufferProgress >= bufferTarget) {
+      AppState.activityBufferReady = true;
+    }
+
     AppState.activityResult.value = ActivityResult(
       activity: activity,
       confidence: confidence,
@@ -728,6 +748,21 @@ class ApiService {
         _handleActivityResponse(json.encode(activity));
       } else {
         AppState.activityResult.value = ActivityResult.empty;
+        // Fall back to Pi-side dangerous object detections for AR overlay
+        final piDets = data['PI_DETECTIONS'] as Map<String, dynamic>?;
+        final rawPi = piDets?['dangerous_objects'] as List<dynamic>? ?? [];
+        AppState.detectedObjects.value = rawPi.map((raw) {
+          final m = raw as Map<String, dynamic>;
+          final box = m['box'] as Map<String, dynamic>?;
+          return DetectedObject(
+            label: (m['label'] as String? ?? 'unknown').toLowerCase(),
+            confidence: (m['confidence'] as num? ?? 0.0).toDouble(),
+            top: (box?['y1'] as num? ?? 0.0).toDouble(),
+            left: (box?['x1'] as num? ?? 0.0).toDouble(),
+            bottom: (box?['y2'] as num? ?? 1.0).toDouble(),
+            right: (box?['x2'] as num? ?? 1.0).toDouble(),
+          );
+        }).toList();
       }
 
       final face = data['FACE_SERVER'] as Map<String, dynamic>?;

@@ -185,7 +185,7 @@ class WanderingDetector:
 # Face Recognition + Person Tracking integration
 # ---------------------------------------------------------------------------
 
-DJANGO_API_URL = os.environ.get("DJANGO_API_URL", "http://localhost:8000/api")
+DJANGO_API_URL = os.environ.get("DJANGO_API_URL", "http://192.168.1.3:8000/api")
 AI_FACE_SERVER_URL = os.environ.get("AI_FACE_SERVER_URL", "http://localhost:5000")
 
 # How often to run face recognition (seconds) — not every frame
@@ -198,7 +198,10 @@ _ALERT_COOLDOWNS = {
     "WANDERING": 120,
     "DANGEROUS_OBJECT": 60,
 }
+_NORMAL_ACTIVITY_COOLDOWN = 300   # 5-min repeat window for same activity
 _last_alert_time = {}
+_last_sent_activity: list = [None]   # tracks last logged activity for change detection
+_NORMAL_ACTIVITIES = {"EAT", "DRINK", "WALK", "SIT", "STAND", "SLEEP", "USE_PHONE"}
 
 # Critical events that should be queued when patient_id is not yet available
 _CRITICAL_ACTIVITIES = {"FALL", "PAIN"}
@@ -468,7 +471,7 @@ def _send_activity_event(patient_id, activity, confidence, is_wandering=False, w
 
     now = time.time()
     key = "WANDERING" if is_wandering else activity
-    cooldown = _ALERT_COOLDOWNS.get(key, 10)
+    cooldown = _ALERT_COOLDOWNS.get(key, _NORMAL_ACTIVITY_COOLDOWN)
     if now - _last_alert_time.get(key, 0) < cooldown:
         return  # Still in cooldown
     _last_alert_time[key] = now
@@ -715,6 +718,7 @@ def run_camera():
                 _latest_raw = f
 
     def _stream_loop():
+        import json as _json
         sess = requests.Session()
         while not _cap_stop[0]:
             time.sleep(0.2)   # 5 FPS
@@ -727,11 +731,23 @@ def run_camera():
             try:
                 small = cv2.resize(f, (320, 240))
                 _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                # Include latest dangerous object bounding boxes so Flutter can overlay them
+                raw_dets = obj_detector.last_detections if obj_loaded else []
+                dets_payload = _json.dumps([
+                    {
+                        "label": d["label"],
+                        "confidence": d["confidence"],
+                        "danger_level": d.get("danger_level", "LOW"),
+                        "box": d["box_norm"],
+                    }
+                    for d in raw_dets
+                ])
                 r = sess.post(
                     f"{DJANGO_API_URL}/stream/push-frame",
                     headers={"X-Api-Key": _PI_API_KEY},
                     files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
-                    data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az},
+                    data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az,
+                          "detections": dets_payload},
                     timeout=2,
                 )
                 if r.status_code not in (200, 202):
@@ -764,11 +780,11 @@ def run_camera():
     pain_consec    = 0
     frame_count    = 0
     SMOOTH_WINDOW      = 15
-    CONFIDENCE_THRESH  = 0.75   # raised from 0.60 to cut wrong guesses
+    CONFIDENCE_THRESH  = 0.75
     CLASS_THRESHOLDS   = {"FALL": 0.75}
     FALL_PERSIST_FRAMES  = 5
-    DRINK_PERSIST_FRAMES = 8     # DRINK must hold N frames before showing
-    DRINK_EAT_MARGIN     = 0.15  # if DRINK barely beats EAT, prefer EAT
+    DRINK_PERSIST_FRAMES = 12    # DRINK must hold N frames before confirming
+    DRINK_EAT_MARGIN     = 0.45  # DRINK needs 45% lead over EAT to win
     probs_buffer         = deque(maxlen=SMOOTH_WINDOW)
 
     while True:
@@ -850,6 +866,13 @@ def run_camera():
             _send_activity_event(current_pid, "WALK", last_conf, is_wandering=True, walk_duration=walk_secs)
         if obj_detections:
             _send_object_detection_event(current_pid, obj_detections)
+
+        # Normal activity logging: immediate on change, 5-min repeat for same activity
+        if last_pred and last_pred in _NORMAL_ACTIVITIES:
+            if last_pred != _last_sent_activity[0]:
+                _last_alert_time.pop(last_pred, None)
+                _last_sent_activity[0] = last_pred
+            _send_activity_event(current_pid, last_pred, last_conf)
 
         # FPS control
         current_time = time.time()

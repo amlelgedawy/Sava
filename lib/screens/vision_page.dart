@@ -63,7 +63,11 @@ class _VisionPageState extends State<VisionPage> {
     _snapshotTimer?.cancel();
     AppState.detectedObjects.value = [];
     AppState.detectedFaces.value = [];
-    AppState.activityResult.value = ActivityResult.empty;
+    // Keep the activity result alive once the 64-frame buffer is full so the
+    // spinner doesn't restart when the user navigates back to the camera.
+    if (!AppState.activityBufferReady) {
+      AppState.activityResult.value = ActivityResult.empty;
+    }
     super.dispose();
   }
 

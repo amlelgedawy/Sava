@@ -12,8 +12,8 @@ except ImportError:
 
 
 # Configuration
-CAMERA_URL = os.environ.get("CAMERA_URL", "http://172.20.10.4:8080/video")
-DJANGO_URL = os.environ.get("DJANGO_URL", "http://172.20.10.3:8000")
+CAMERA_URL = os.environ.get("CAMERA_URL", "http://192.168.1.4:8080/video")
+DJANGO_URL = os.environ.get("DJANGO_URL", "http://192.168.1.3:8000")
 PI_API_KEY = os.environ.get("PI_API_KEY", "sava-pi-dev-key")
 PATIENT_ID = "6a0e4fc16b309057efb4acde"
 TARGET_FPS = 15

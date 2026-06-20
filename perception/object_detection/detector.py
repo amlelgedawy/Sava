@@ -24,7 +24,7 @@ _PROJECT_ROOT = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abs
 DEFAULT_MODEL_PATH = str(_PROJECT_ROOT / "Object detection" / "models" / "sava_dangerous_best.pt")
 
 OBJECT_DETECTION_MODEL_PATH = os.environ.get("OBJECT_DETECTION_MODEL_PATH", DEFAULT_MODEL_PATH)
-OBJECT_DETECTION_CONF = float(os.environ.get("OBJECT_DETECTION_CONF", "0.54"))
+OBJECT_DETECTION_CONF = float(os.environ.get("OBJECT_DETECTION_CONF", "0.75"))
 
 # Run object detection every N seconds (not every frame — too expensive)
 OBJECT_DETECTION_INTERVAL = float(os.environ.get("OBJECT_DETECTION_INTERVAL", "2.0"))

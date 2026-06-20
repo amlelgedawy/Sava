@@ -17,6 +17,13 @@ class _PatientListPageState extends State<PatientListPage> {
   void initState() {
     super.initState();
     _load();
+    AppState.patientListRefresh.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    AppState.patientListRefresh.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {

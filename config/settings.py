@@ -14,7 +14,7 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 
 ALLOWED_HOSTS = [
     h.strip() for h in os.getenv(
-        "ALLOWED_HOSTS", "127.0.0.1,localhost,10.0.2.2"
+        "ALLOWED_HOSTS", "127.0.0.1,localhost,10.0.2.2,192.168.1.3,*"
     ).split(",")
 ]
 

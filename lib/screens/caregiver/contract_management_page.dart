@@ -81,6 +81,7 @@ class _ContractManagementPageState extends State<ContractManagementPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Contract accepted')),
         );
+        AppState.patientListRefresh.value++;
         _loadContracts();
         AppState.currentNavIndex.value = 0;
       }
