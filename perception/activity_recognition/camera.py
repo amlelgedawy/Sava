@@ -731,7 +731,7 @@ def run_camera():
         import json as _json
         sess = requests.Session()
         while not _cap_stop[0]:
-            time.sleep(0.2)   # 5 FPS
+            time.sleep(0.5)   # 2 FPS — enough for cloud; higher FPS saturates upload
             with _raw_lock:
                 if _latest_raw is None:
                     continue
@@ -739,9 +739,8 @@ def run_camera():
             pid = identifier.patient_id or ""
             ax, ay, az = accel.xyz if accel else (0.0, 0.0, 0.0)
             try:
-                small = cv2.resize(f, (640, 480))
-                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                # Include latest dangerous object bounding boxes so Flutter can overlay them
+                small = cv2.resize(f, (320, 240))
+                _, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 55])
                 raw_dets = obj_detector.last_detections if obj_loaded else []
                 dets_payload = _json.dumps([
                     {
@@ -758,7 +757,7 @@ def run_camera():
                     files={"frame": ("f.jpg", buf.tobytes(), "image/jpeg")},
                     data={"patient_id": pid, "accel_x": ax, "accel_y": ay, "accel_z": az,
                           "detections": dets_payload},
-                    timeout=2,
+                    timeout=8,
                 )
                 if r.status_code not in (200, 202):
                     print(f"[stream] {r.status_code}: {r.text[:80]}")
