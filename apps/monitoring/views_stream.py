@@ -65,11 +65,18 @@ class PushFrameView(APIView):
             daemon=True,
         ).start()
 
-        # Store Pi-side dangerous object detections for Flutter AR overlay
+        # Store Pi-side detections + AI state for Flutter AR overlay
         det_json = request.data.get("detections", "[]")
+        ai_json  = request.data.get("ai_state", "{}")
         try:
-            dets = json.loads(det_json)
-            StreamManager.set_detection(patient_id, "PI_DETECTIONS", {"dangerous_objects": dets})
+            dets     = json.loads(det_json)
+            ai_state = json.loads(ai_json)
+            StreamManager.set_detection(patient_id, "PI_DETECTIONS", {
+                "dangerous_objects": dets,
+                "person_boxes":      ai_state.get("person_boxes", []),
+                "activity":          ai_state.get("activity"),
+                "confidence":        ai_state.get("confidence", 0.0),
+            })
         except Exception:
             pass
 
