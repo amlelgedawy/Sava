@@ -15,17 +15,30 @@ import math
 import threading
 import time
 
-from .config import (
-    ACCEL_FREEFALL_MIN_MS,
-    ACCEL_FREEFALL_THRESHOLD_G,
-    ACCEL_I2C_ADDR,
-    ACCEL_I2C_BUS,
-    ACCEL_IMPACT_FLAG_SEC,
-    ACCEL_IMPACT_THRESHOLD_G,
-    ACCEL_IMPACT_WINDOW_MS,
-    ACCEL_SAMPLE_RATE_HZ,
-    ACCEL_STANDALONE_G,
-)
+try:
+    from .config import (
+        ACCEL_FREEFALL_MIN_MS,
+        ACCEL_FREEFALL_THRESHOLD_G,
+        ACCEL_I2C_ADDR,
+        ACCEL_I2C_BUS,
+        ACCEL_IMPACT_FLAG_SEC,
+        ACCEL_IMPACT_THRESHOLD_G,
+        ACCEL_IMPACT_WINDOW_MS,
+        ACCEL_SAMPLE_RATE_HZ,
+        ACCEL_STANDALONE_G,
+    )
+except ImportError:
+    from config import (
+        ACCEL_FREEFALL_MIN_MS,
+        ACCEL_FREEFALL_THRESHOLD_G,
+        ACCEL_I2C_ADDR,
+        ACCEL_I2C_BUS,
+        ACCEL_IMPACT_FLAG_SEC,
+        ACCEL_IMPACT_THRESHOLD_G,
+        ACCEL_IMPACT_WINDOW_MS,
+        ACCEL_SAMPLE_RATE_HZ,
+        ACCEL_STANDALONE_G,
+    )
 
 _PWR_MGMT_1   = 0x6B
 _ACCEL_XOUT_H = 0x3B

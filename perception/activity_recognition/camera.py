@@ -686,7 +686,10 @@ def run_camera():
     accel = None
     if ACCEL_ENABLED:
         try:
-            from .accelerometer import AccelerometerReader
+            try:
+                from .accelerometer import AccelerometerReader
+            except ImportError:
+                from accelerometer import AccelerometerReader
             accel = AccelerometerReader()
             accel.start()
             print("✅ Accelerometer (MPU-6050) connected.")
