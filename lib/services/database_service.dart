@@ -13,6 +13,7 @@ class DatabaseService {
 
   static Timer? _alertPollingTimer;
   static Timer? _heartRateTimer;
+  static Timer? _activityTimer;
   static int _heartRateIndex = 0;
   static const List<int> _heartRateSequence = [
     68, 71, 74, 72, 76, 73, 70, 75, 72, 69, 74, 77, 73, 71, 75
@@ -129,10 +130,16 @@ class DatabaseService {
 
   static void startAlertPollingForUser(String userId) {
     _alertPollingTimer?.cancel();
+    _activityTimer?.cancel();
     _fetchNewAlerts();
+    fetchActivityHistory();
     _alertPollingTimer = Timer.periodic(
       const Duration(seconds: 5),
       (_) => _fetchNewAlerts(),
+    );
+    _activityTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => fetchActivityHistory(),
     );
     _startHeartRateSimulation();
   }
@@ -146,6 +153,8 @@ class DatabaseService {
     _alertPollingTimer = null;
     _heartRateTimer?.cancel();
     _heartRateTimer = null;
+    _activityTimer?.cancel();
+    _activityTimer = null;
     _seenAlertIds.clear();
   }
 

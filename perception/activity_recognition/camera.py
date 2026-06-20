@@ -233,9 +233,10 @@ class PatientIdentifier:
     EMBEDDING_SIMILARITY_THRESHOLD = 0.6
 
     def __init__(self):
-        self.patient_id = None
+        _env_pid = os.environ.get("PATIENT_ID", "").strip()
+        self.patient_id = _env_pid if _env_pid else None
         self.patient_name = None
-        self.state = self.STATE_IDENTIFYING
+        self.state = self.STATE_TRACKING if _env_pid else self.STATE_IDENTIFYING
         self._last_check = 0
         self._busy = False
         self._name_to_id_cache = {}
@@ -687,7 +688,7 @@ def run_camera():
             print(f"⚠️  Accelerometer not available ({e}). Using camera-only fall detection.")
 
     # emotion_det = EmotionDetector(device)   # dropped — lowest priority
-    pain_det = PainDetector(PAIN_BASELINE_FRAMES)
+    pain_det = PainDetector(PAIN_BASELINE_FRAMES) if PainDetector is not None else None
     pain_clf = None
     if PainClassifier is not None:
         try:
@@ -886,11 +887,11 @@ def run_camera():
         #    Falls back to EfficientNet-B0 when pain_efficientnet_b0.pt is available.
         frame_count += 1
         if frame_count % PAIN_FRAME_INTERVAL == 0:
-            if pain_clf._model is not None:
+            if pain_clf is not None and pain_clf._model is not None:
                 face_crop = _face_crop_from_bbox(frame, person_bbox)
                 if face_crop is not None:
                     last_pain_prob = pain_clf.predict(face_crop)
-            else:
+            elif pain_det is not None:
                 last_pain_prob = pain_det.predict(frame)
 
         # ----------------------------------------------------------------
@@ -932,7 +933,7 @@ def run_camera():
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, act_color, 2)
 
         # Pain overlay
-        if pain_det.calibrating:
+        if pain_det is not None and pain_det.calibrating:
             pain_text  = f"Pain: calibrating... ({pain_det.calibration_count}/{PAIN_BASELINE_FRAMES})"
             pain_color = (100, 100, 100)
         elif last_pain_prob is not None:
@@ -998,9 +999,14 @@ def run_camera():
     pose_est.close()
     if accel:
         accel.stop()
-    pain_det.close()
+    if pain_det is not None:
+        pain_det.close()
     if recorder:
         recorder.release()
     if not HEADLESS_MODE:
         cv2.destroyAllWindows()
     print(" Camera stopped cleanly.")
+
+
+if __name__ == '__main__':
+    run_camera()

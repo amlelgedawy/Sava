@@ -308,53 +308,91 @@ class _CaregiverHomePageState extends State<CaregiverHomePage> {
 
                     const SizedBox(height: 16),
 
-                    // ── Medicine Card ──────────────────────────────────────
-                    ValueListenableBuilder<List<Medication>>(
-                      valueListenable: AppState.allMedications,
-                      builder: (_, meds, __) {
-                        Medication? next;
-                        for (final m in meds) {
-                          if (!m.isTaken) { next = m; break; }
-                        }
-                        return InteractiveBentoCard(
-                          onTap: () => AppState.currentNavIndex.value = 4,
-                          color: const Color(0xFFE83E8C),
-                          height: 130,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Icon(Icons.medication_liquid_outlined,
-                                    color: Colors.white, size: 24),
-                                const Spacer(),
-                                const Text('NEXT MEDICINE',
-                                    style: TextStyle(
-                                        color: Colors.white70,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 1)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  next?.name ?? '✓ All taken',
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                    // ── Medicine + Activity side by side ──────────────────
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ValueListenableBuilder<List<Medication>>(
+                            valueListenable: AppState.allMedications,
+                            builder: (_, meds, __) {
+                              Medication? next;
+                              for (final m in meds) {
+                                if (!m.isTaken) { next = m; break; }
+                              }
+                              return InteractiveBentoCard(
+                                onTap: () => AppState.currentNavIndex.value = 4,
+                                color: const Color(0xFFE83E8C),
+                                height: 130,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(Icons.medication_liquid_outlined,
+                                          color: Colors.white, size: 24),
+                                      const Spacer(),
+                                      const Text('NEXT MEDICINE',
+                                          style: TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 1)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        next?.name ?? '✓ All taken',
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (next != null)
+                                        Text(next.time,
+                                            style: const TextStyle(
+                                                color: Colors.white70,
+                                                fontSize: 12)),
+                                    ],
+                                  ),
                                 ),
-                                if (next != null)
-                                  Text(next.time,
-                                      style: const TextStyle(
+                              );
+                            },
+                          ).animate().fadeIn(delay: 300.ms),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: InteractiveBentoCard(
+                            onTap: () => AppState.currentNavIndex.value = 3,
+                            color: const Color(0xFF8DA399),
+                            height: 130,
+                            child: const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.timeline_rounded,
+                                      color: Colors.white, size: 24),
+                                  Spacer(),
+                                  Text('ACTIVITY',
+                                      style: TextStyle(
                                           color: Colors.white70,
-                                          fontSize: 12)),
-                              ],
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1)),
+                                  SizedBox(height: 4),
+                                  Text('Timeline',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold)),
+                                ],
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ).animate().fadeIn(delay: 300.ms),
+                          ).animate().fadeIn(delay: 300.ms),
+                        ),
+                      ],
+                    ),
 
                     const SizedBox(height: 16),
 
