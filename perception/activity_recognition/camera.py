@@ -413,6 +413,12 @@ class PatientIdentifier:
 
     def _transition_to_identifying(self, reason):
         """Clear identity and switch back to face recognition phase."""
+        _env_pid = os.environ.get("PATIENT_ID", "").strip()
+        if _env_pid:
+            # Patient is pinned via env var — don't clear the ID, just reset tracking
+            self._known_embedding = None
+            self._tracking_lost_count = 0
+            return
         if self.patient_id is not None:
             print(f" {reason} -- switching to face recognition mode")
         self.patient_id = None
