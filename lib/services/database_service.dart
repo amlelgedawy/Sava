@@ -8,8 +8,8 @@ import '../app_state.dart';
 import 'api_service.dart';
 
 class DatabaseService {
-  static const String _baseUrl = "http://192.168.1.3:8000/api";
-  //static const String _baseUrl = "http://10.0.2.2:8000/api"; // Android emulator alias
+  static const String _baseUrl = "https://sava-production.up.railway.app/api";
+  //static const String _baseUrl = "http://192.168.1.3:8000/api"; // local WiFi
 
   static Timer? _alertPollingTimer;
   static Timer? _heartRateTimer;
@@ -276,6 +276,7 @@ class DatabaseService {
         final activity =
             (payload['activity'] as String? ?? e['event_type'] as String? ?? '')
                 .toUpperCase();
+        if (activity == 'FALL' || activity == 'TYPE_FALL') continue;
         final createdAt = e['created_at'];
         String timeStr = '';
         if (createdAt != null) {
@@ -351,6 +352,12 @@ class DatabaseService {
       default:
         return Icons.fiber_manual_record_rounded;
     }
+  }
+
+  static void clearActivityLog() {
+    _logs.clear();
+    AppState.allActivityLogs.value = [];
+    AppState.lastActivity.value = null;
   }
 
   static void addNewActivity(String title, IconData icon) {

@@ -50,6 +50,14 @@ class _ActivityTimelinePageState extends State<ActivityTimelinePage> {
                   ),
                 ),
                 actions: [
+                  if (logs.isNotEmpty)
+                    TextButton(
+                      onPressed: () => DatabaseService.clearActivityLog(),
+                      child: const Text(
+                        "Clear All",
+                        style: TextStyle(color: Colors.black38, fontSize: 13),
+                      ),
+                    ),
                   _loading
                       ? const Padding(
                           padding: EdgeInsets.all(12),
